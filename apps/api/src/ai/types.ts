@@ -30,3 +30,12 @@ export interface StructuredReply {
   suggestedChips: string[];
   detectedTopics: string[];
 }
+
+export interface AnalyzeImageContext {
+  language: ChatLanguage;
+  season: SeasonInfo;
+  cropStage?: CropStageInfo;
+  relevantFacts: KnowledgeFact[];
+  /** Optional text the farmer sent alongside the photo. */
+  caption?: string;
+}

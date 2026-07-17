@@ -21,7 +21,7 @@ Environment variables to set on the Render service:
 - `DATABASE_SYNCHRONIZE` — `false` in any shared environment; use migrations instead
 - `PORT` — set automatically by Render, no action needed
 - `FRONTEND_URL` — the deployed Vercel URL, for CORS
-- `GEMINI_API_KEY`
+- `GROQ_API_KEY`
 - `AFRICAS_TALKING_API_KEY`
 - `AFRICAS_TALKING_USERNAME`
 

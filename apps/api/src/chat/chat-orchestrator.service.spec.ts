@@ -18,7 +18,7 @@ describe("ChatOrchestratorService", () => {
   let seasonService: any;
   let cropsService: any;
   let knowledgeService: any;
-  let geminiService: any;
+  let groqService: any;
   let service: ChatOrchestratorService;
 
   beforeEach(() => {
@@ -36,11 +36,16 @@ describe("ChatOrchestratorService", () => {
     seasonService = { getCurrentSeason: jest.fn(() => makeSeason()) };
     cropsService = { getCurrentStage: jest.fn() };
     knowledgeService = { search: jest.fn(async () => []) };
-    geminiService = {
+    groqService = {
       generateReply: jest.fn(async () => ({
         replyText: "Which crop did you plant, and when?",
         suggestedChips: ["Maize", "Beans", "Irish potato"],
         detectedTopics: [],
+      })),
+      analyzeImage: jest.fn(async () => ({
+        replyText: "This could be pest damage, but I'm not fully certain from the photo alone.",
+        suggestedChips: ["Send another photo"],
+        detectedTopics: ["pest"],
       })),
     };
 
@@ -51,7 +56,7 @@ describe("ChatOrchestratorService", () => {
       seasonService,
       cropsService,
       knowledgeService,
-      geminiService,
+      groqService,
     );
   });
 
@@ -63,7 +68,7 @@ describe("ChatOrchestratorService", () => {
     expect(result.replyText).toContain("Which crop");
 
     expect(cropsService.getCurrentStage).not.toHaveBeenCalled();
-    expect(geminiService.generateReply).toHaveBeenCalledWith(
+    expect(groqService.generateReply).toHaveBeenCalledWith(
       expect.objectContaining({ cropStage: undefined, language: "en" }),
     );
     expect(messageRepository.save).toHaveBeenCalledTimes(2);
@@ -91,7 +96,7 @@ describe("ChatOrchestratorService", () => {
     expect(result.cropStage).toEqual(
       expect.objectContaining({ name: "Vegetative growth", weekStart: 6, weekEnd: 8 }),
     );
-    expect(geminiService.generateReply).toHaveBeenCalledWith(
+    expect(groqService.generateReply).toHaveBeenCalledWith(
       expect.objectContaining({
         cropStage: expect.objectContaining({ name: "Vegetative growth", weekStart: 6, weekEnd: 8 }),
       }),
@@ -118,7 +123,7 @@ describe("ChatOrchestratorService", () => {
 
     expect(result.conversationId).toBe("conv-existing");
     expect(languageService.detect).not.toHaveBeenCalled();
-    expect(geminiService.generateReply).toHaveBeenCalledWith(
+    expect(groqService.generateReply).toHaveBeenCalledWith(
       expect.objectContaining({
         language: "fr",
         conversationHistory: [
@@ -143,7 +148,7 @@ describe("ChatOrchestratorService", () => {
       language: "en",
     });
 
-    expect(geminiService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "en" }));
+    expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "en" }));
   });
 
   it("persists both the user message and the bot reply, in order", async () => {
@@ -154,5 +159,73 @@ describe("ChatOrchestratorService", () => {
       2,
       expect.objectContaining({ role: "bot", text: "Which crop did you plant, and when?" }),
     );
+  });
+
+  it("defaults the persisted message type to 'text' and tags it 'voice' when told to", async () => {
+    await service.handleMessage({ message: "Hi" });
+    expect(messageRepository.create).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "text" }));
+
+    await service.handleMessage({ message: "transcribed speech", messageType: "voice" });
+    expect(messageRepository.create).toHaveBeenNthCalledWith(3, expect.objectContaining({ type: "voice" }));
+
+    // Bot replies are always "text" regardless of what triggered them — the bot never sends voice/photos.
+    expect(messageRepository.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ role: "bot", type: "text" }));
+    expect(messageRepository.create).toHaveBeenNthCalledWith(4, expect.objectContaining({ role: "bot", type: "text" }));
+  });
+
+  describe("handlePhotoMessage", () => {
+    it("calls analyzeImage with the gathered context and persists a 'photo'-typed user message", async () => {
+      cropsService.getCurrentStage.mockResolvedValue({
+        id: "stage-1",
+        cropId: "maize-id",
+        name: "Vegetative growth",
+        orderIndex: 4,
+        weekStart: 6,
+        weekEnd: 8,
+        taskDescription: "Top-dress with nitrogen.",
+        taskDescriptionRw: "Ongeraho ifumbire.",
+      });
+      const imageBuffer = Buffer.from("fake-image-bytes");
+
+      const result = await service.handlePhotoMessage({
+        imageBuffer,
+        mimeType: "image/jpeg",
+        caption: "What is wrong with these leaves?",
+        cropId: "maize-id",
+        plantingDate: "2026-05-01",
+      });
+
+      expect(groqService.analyzeImage).toHaveBeenCalledWith(
+        imageBuffer,
+        "image/jpeg",
+        expect.objectContaining({
+          language: "en",
+          caption: "What is wrong with these leaves?",
+          cropStage: expect.objectContaining({ name: "Vegetative growth" }),
+        }),
+      );
+      expect(messageRepository.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ role: "user", type: "photo", text: "What is wrong with these leaves?" }),
+      );
+      expect(messageRepository.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ role: "bot", type: "text" }));
+      expect(result.replyText).toContain("not fully certain");
+      expect(result.conversationId).toBe("conv-1");
+    });
+
+    it("uses a placeholder text when no caption is given", async () => {
+      await service.handlePhotoMessage({ imageBuffer: Buffer.from("x"), mimeType: "image/png" });
+
+      expect(messageRepository.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ role: "user", type: "photo", text: "[Photo shared]" }),
+      );
+    });
+
+    it("still searches knowledge scoped to the crop when there's no caption to extract keywords from", async () => {
+      await service.handlePhotoMessage({ imageBuffer: Buffer.from("x"), mimeType: "image/png", cropId: "maize-id" });
+
+      expect(knowledgeService.search).toHaveBeenCalledWith("", "maize-id");
+    });
   });
 });

@@ -16,7 +16,7 @@ interface DebugChatMessageBody {
 
 // TEMPORARY — REMOVE OR PROTECT (e.g. behind auth/env guard) BEFORE PRODUCTION.
 // These endpoints exist only for manual verification of the season/crop/knowledge
-// services and the chat orchestrator (including real Gemini calls) without a real client.
+// services and the chat orchestrator (including real Groq calls) without a real client.
 @Controller("debug")
 export class DebugController {
   constructor(
@@ -47,7 +47,7 @@ export class DebugController {
     return this.knowledgeService.search(q ?? "", cropId, topic);
   }
 
-  // Hits the real orchestrator end-to-end, including a real Gemini API call. Manual testing only.
+  // Hits the real orchestrator end-to-end, including a real Groq API call. Manual testing only.
   @Post("chat/message")
   sendChatMessage(@Body() body: DebugChatMessageBody) {
     if (!body?.message?.trim()) {

@@ -1,8 +1,8 @@
 import { Module } from "@nestjs/common";
-import { GeminiService } from "./gemini.service";
+import { GroqService } from "./groq.service";
 
 @Module({
-  providers: [GeminiService],
-  exports: [GeminiService],
+  providers: [GroqService],
+  exports: [GroqService],
 })
 export class AiModule {}
