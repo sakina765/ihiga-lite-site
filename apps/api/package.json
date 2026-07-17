@@ -1,0 +1,51 @@
+{
+  "name": "@ihiga-lite/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ihiga Lite API — NestJS backend",
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "jest",
+    "seed:crops": "ts-node src/crops/seed/seed-crops.ts",
+    "seed:knowledge": "ts-node src/knowledge/seed/seed-knowledge.ts",
+    "seed": "pnpm seed:crops && pnpm seed:knowledge"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@nestjs/common": "^10.4.4",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.4",
+    "@nestjs/platform-express": "^10.4.4",
+    "@nestjs/schedule": "^4.1.1",
+    "@nestjs/typeorm": "^10.0.2",
+    "@ihiga-lite/shared": "workspace:*",
+    "africastalking": "^0.7.1",
+    "pg": "^8.13.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.5",
+    "@nestjs/schematics": "^10.2.3",
+    "@nestjs/testing": "^10.4.4",
+    "@types/jest": "^29.5.13",
+    "@types/node": "^20.16.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "jest": {
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "testEnvironment": "node"
+  }
+}

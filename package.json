@@ -1,0 +1,15 @@
+{
+  "name": "ihiga-lite-site",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ihiga Lite — a crop advisory chatbot for Rwandan farmers. pnpm workspace monorepo.",
+  "scripts": {
+    "dev": "pnpm --filter @ihiga-lite/shared build && pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter @ihiga-lite/shared build && pnpm --recursive --filter \"./apps/*\" build",
+    "lint": "pnpm --recursive --filter \"./apps/*\" --filter \"./packages/*\" lint"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

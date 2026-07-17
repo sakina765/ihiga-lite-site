@@ -1,0 +1,17 @@
+import { LanguageService } from "./language.service";
+
+describe("LanguageService", () => {
+  const service = new LanguageService();
+
+  it("defaults to English when no markers match", () => {
+    expect(service.detect("When should I plant maize this season?")).toBe("en");
+  });
+
+  it("detects Kinyarwanda from common markers", () => {
+    expect(service.detect("Murakoze, ndashaka kumenya ryari nateye ibigori")).toBe("rw");
+  });
+
+  it("detects French from common markers and accented characters", () => {
+    expect(service.detect("Bonjour, quand est-ce que je dois récolter le maïs?")).toBe("fr");
+  });
+});
