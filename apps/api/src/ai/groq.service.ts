@@ -34,7 +34,7 @@ const GROQ_REQUEST_TIMEOUT_MS = 60_000;
 const SYSTEM_PROMPT = `You are Ihiga Lite, an agricultural advisory assistant for smallholder farmers in Rwanda.
 
 Rules you MUST follow on every reply:
-1. Answer ONLY using the CONTEXT block provided with each message (current season, crop stage, and knowledge facts). Do not rely on outside/general agricultural knowledge beyond what CONTEXT gives you.
+1. Answer ONLY using the CONTEXT block provided with each message (current season, crop stage, knowledge facts, and today's weather). Do not rely on outside/general agricultural knowledge beyond what CONTEXT gives you.
 2. If CONTEXT does not cover what the farmer is asking, say so honestly (e.g. "I don't have reliable information on that yet") instead of guessing or inventing an answer.
 3. Always reply in the language given by "language" in CONTEXT: "en" = English, "rw" = Kinyarwanda, "fr" = French.
 4. Keep replies concise and practical — this is delivered over SMS/low-bandwidth chat, not a long essay. A few short sentences is usually enough.
@@ -52,7 +52,7 @@ const VISION_SYSTEM_PROMPT = `You are Ihiga Lite, an agricultural advisory assis
 Rules you MUST follow on every reply:
 1. Describe only what is visibly consistent with the image. If the photo is blurry, poorly lit, too distant, or otherwise not clear enough to make a confident call, say so plainly instead of guessing.
 2. NEVER state a pest, disease, or deficiency diagnosis with confidence unless the visual symptoms are distinctive and clearly visible. Prefer hedged language ("this could be...", "this looks consistent with..., but a closer look or a second opinion would help") over definitive claims — a wrong confident diagnosis can lead to the wrong treatment being applied to a real crop.
-3. Use the CONTEXT block (current season, the farmer's crop stage if known, and knowledge facts) to inform your answer where visually relevant — e.g. if the farmer's crop and a matching pest/disease fact are both in CONTEXT and the photo is visually consistent with it, you may reference it. Do not invent facts beyond CONTEXT and what you can see.
+3. Use the CONTEXT block (current season, the farmer's crop stage if known, knowledge facts, and today's weather) to inform your answer where visually relevant — e.g. if the farmer's crop and a matching pest/disease fact are both in CONTEXT and the photo is visually consistent with it, you may reference it. Do not invent facts beyond CONTEXT and what you can see.
 4. Always reply in the language given by "language" in CONTEXT: "en" = English, "rw" = Kinyarwanda, "fr" = French.
 5. Keep replies concise and practical — a few short sentences is usually enough.
 6. Respond with ONLY a single valid JSON object matching this exact shape — no markdown code fences, no text outside the JSON:
@@ -189,6 +189,7 @@ export class GroqService {
     season: GenerateReplyParams["season"];
     cropStage?: GenerateReplyParams["cropStage"];
     relevantFacts: GenerateReplyParams["relevantFacts"];
+    weather?: GenerateReplyParams["weather"];
   }): string[] {
     const lines: string[] = [];
     lines.push(`language: ${params.language}`);
@@ -211,9 +212,25 @@ export class GroqService {
       lines.push("knowledge_facts:");
       params.relevantFacts.forEach((fact, index) => {
         lines.push(`  ${index + 1}. [${fact.topic}] ${fact.factText} (source: ${fact.source})`);
+        // Validated native Kinyarwanda text, when we have it, is more reliable
+        // than Groq's own live translation of the English fact — surface it
+        // alongside rather than only ever sending the English version.
+        if (fact.factTextRw) {
+          lines.push(`     rw: ${fact.factTextRw}`);
+        }
       });
     } else {
       lines.push("knowledge_facts: none found for this query");
+    }
+
+    if (params.weather) {
+      lines.push(
+        `weather_today (${params.weather.district}): ${params.weather.todayRainfallProbability}% chance of rain, ` +
+          `${params.weather.todayRainfallMm}mm expected` +
+          (params.weather.soilWorkable ? "" : ` — ${params.weather.soilWorkableReason ?? "avoid working the soil today"}`),
+      );
+    } else {
+      lines.push("weather_today: not available (farmer's district not known yet, or the lookup failed)");
     }
 
     return lines;

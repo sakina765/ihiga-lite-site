@@ -147,6 +147,35 @@ describe("GroqService", () => {
     expect(call.response_format).toEqual({ type: "json_object" });
   });
 
+  it("includes a knowledge fact's Kinyarwanda translation in the prompt when present, alongside the English text", async () => {
+    createMock.mockResolvedValue({
+      choices: [{ message: { content: JSON.stringify({ replyText: "ok", suggestedChips: [], detectedTopics: [] }) } }],
+    });
+
+    await service.generateReply({
+      userMessage: "when should I harvest maize?",
+      language: "rw",
+      season: makeSeason(),
+      relevantFacts: [
+        {
+          id: "fact-1",
+          cropId: null,
+          crop: null,
+          topic: "harvest",
+          factText: "Maize is ready when husks turn brown.",
+          factTextRw: "Ibigori biba biteguye igihe amakoba yahindutse ibara ry'ikawa.",
+          source: "RICA",
+          tags: ["harvest", "maize"],
+        },
+      ],
+    });
+
+    const call = createMock.mock.calls[0][0];
+    const userTurn = call.messages[call.messages.length - 1].content as string;
+    expect(userTurn).toContain("Maize is ready when husks turn brown.");
+    expect(userTurn).toContain("Ibigori biba biteguye igihe amakoba yahindutse ibara ry'ikawa.");
+  });
+
   describe("transcribeAudio", () => {
     it("returns the transcribed text on success", async () => {
       transcriptionsCreateMock.mockResolvedValue({ text: "plant maize now" });

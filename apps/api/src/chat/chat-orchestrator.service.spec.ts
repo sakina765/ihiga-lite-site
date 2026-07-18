@@ -11,6 +11,8 @@ function makeSeason(): SeasonInfo {
   };
 }
 
+const FARMER_ID = "farmer-1";
+
 describe("ChatOrchestratorService", () => {
   let conversationRepository: any;
   let messageRepository: any;
@@ -19,11 +21,13 @@ describe("ChatOrchestratorService", () => {
   let cropsService: any;
   let knowledgeService: any;
   let groqService: any;
+  let farmersService: any;
+  let weatherService: any;
   let service: ChatOrchestratorService;
 
   beforeEach(() => {
     conversationRepository = {
-      create: jest.fn((data: any) => ({ id: undefined, language: null, cropId: null, plantingDate: null, ...data })),
+      create: jest.fn((data: any) => ({ id: undefined, language: null, farmerId: null, cropId: null, plantingDate: null, ...data })),
       save: jest.fn(async (entity: any) => ({ ...entity, id: entity.id ?? "conv-1" })),
       findOne: jest.fn(),
     };
@@ -48,6 +52,8 @@ describe("ChatOrchestratorService", () => {
         detectedTopics: ["pest"],
       })),
     };
+    farmersService = { getById: jest.fn(async () => ({ id: FARMER_ID, district: null, preferredLanguage: null })) };
+    weatherService = { getForecast: jest.fn() };
 
     service = new ChatOrchestratorService(
       conversationRepository,
@@ -57,11 +63,13 @@ describe("ChatOrchestratorService", () => {
       cropsService,
       knowledgeService,
       groqService,
+      farmersService,
+      weatherService,
     );
   });
 
   it("starts a new conversation and asks a clarifying question when no crop is known", async () => {
-    const result = await service.handleMessage({ message: "Hello, I need help with my farm" });
+    const result = await service.handleMessage({ farmerId: FARMER_ID, message: "Hello, I need help with my farm" });
 
     expect(result.conversationId).toBe("conv-1");
     expect(result.cropStage).toBeUndefined();
@@ -72,6 +80,12 @@ describe("ChatOrchestratorService", () => {
       expect.objectContaining({ cropStage: undefined, language: "en" }),
     );
     expect(messageRepository.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("sets farmerId on the conversation", async () => {
+    await service.handleMessage({ farmerId: FARMER_ID, message: "Hello" });
+
+    expect(conversationRepository.save).toHaveBeenCalledWith(expect.objectContaining({ farmerId: FARMER_ID }));
   });
 
   it("resolves and forwards the crop stage when cropId + plantingDate are known", async () => {
@@ -87,6 +101,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     const result = await service.handleMessage({
+      farmerId: FARMER_ID,
       message: "What should I do now?",
       cropId: "maize-id",
       plantingDate: "2026-05-01",
@@ -103,34 +118,82 @@ describe("ChatOrchestratorService", () => {
     );
   });
 
-  it("reuses an existing conversation's language and recent history instead of re-detecting", async () => {
+  it("re-detects language from each new message rather than sticking with the conversation's stored language", async () => {
     conversationRepository.findOne.mockResolvedValue({
       id: "conv-existing",
-      language: "fr",
+      language: "en",
+      farmerId: FARMER_ID,
       cropId: null,
       plantingDate: null,
     });
     // Repository query orders DESC (most recent first); the service reverses it.
     messageRepository.find.mockResolvedValue([
-      { role: "user", text: "Salut", createdAt: new Date(2026, 0, 2) },
-      { role: "bot", text: "Bonjour", createdAt: new Date(2026, 0, 1) },
+      { role: "user", text: "Hello", createdAt: new Date(2026, 0, 2) },
+      { role: "bot", text: "Hi there", createdAt: new Date(2026, 0, 1) },
     ]);
+    // A farmer who started in English switching to French mid-conversation —
+    // Ihiga should follow along on this very message, not stay locked to "en".
+    languageService.detect.mockReturnValue("fr");
 
     const result = await service.handleMessage({
       conversationId: "conv-existing",
+      farmerId: FARMER_ID,
       message: "Et maintenant?",
     });
 
     expect(result.conversationId).toBe("conv-existing");
-    expect(languageService.detect).not.toHaveBeenCalled();
+    expect(languageService.detect).toHaveBeenCalledWith("Et maintenant?");
     expect(groqService.generateReply).toHaveBeenCalledWith(
       expect.objectContaining({
         language: "fr",
         conversationHistory: [
-          { role: "model", text: "Bonjour" },
-          { role: "user", text: "Salut" },
+          { role: "model", text: "Hi there" },
+          { role: "user", text: "Hello" },
         ],
       }),
+    );
+  });
+
+  it("keeps an established non-English conversation language when a later message has no confident signal", async () => {
+    conversationRepository.findOne.mockResolvedValue({
+      id: "conv-existing",
+      language: "fr",
+      farmerId: FARMER_ID,
+      cropId: null,
+      plantingDate: null,
+    });
+    // Mimics the real detector's behavior on an ambiguous message like "Riz" —
+    // no fr/rw markers matched, so it falls back to "en" — which here should
+    // read as "no signal", not "the farmer switched to English".
+    languageService.detect.mockReturnValue("en");
+
+    await service.handleMessage({ conversationId: "conv-existing", farmerId: FARMER_ID, message: "Riz" });
+
+    expect(languageService.detect).toHaveBeenCalledWith("Riz");
+    expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "fr" }));
+  });
+
+  it("keeps the conversation's existing language when there's no text to detect from (e.g. an uncaptioned photo)", async () => {
+    conversationRepository.findOne.mockResolvedValue({
+      id: "conv-existing",
+      language: "rw",
+      farmerId: FARMER_ID,
+      cropId: null,
+      plantingDate: null,
+    });
+
+    await service.handlePhotoMessage({
+      conversationId: "conv-existing",
+      farmerId: FARMER_ID,
+      imageBuffer: Buffer.from("fake-image-bytes"),
+      mimeType: "image/jpeg",
+    });
+
+    expect(languageService.detect).not.toHaveBeenCalled();
+    expect(groqService.analyzeImage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ language: "rw" }),
     );
   });
 
@@ -138,12 +201,14 @@ describe("ChatOrchestratorService", () => {
     conversationRepository.findOne.mockResolvedValue({
       id: "conv-existing",
       language: "fr",
+      farmerId: FARMER_ID,
       cropId: null,
       plantingDate: null,
     });
 
     await service.handleMessage({
       conversationId: "conv-existing",
+      farmerId: FARMER_ID,
       message: "switch to english please",
       language: "en",
     });
@@ -152,7 +217,7 @@ describe("ChatOrchestratorService", () => {
   });
 
   it("persists both the user message and the bot reply, in order", async () => {
-    await service.handleMessage({ message: "Hi" });
+    await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
 
     expect(messageRepository.save).toHaveBeenNthCalledWith(1, expect.objectContaining({ role: "user", text: "Hi" }));
     expect(messageRepository.save).toHaveBeenNthCalledWith(
@@ -162,15 +227,47 @@ describe("ChatOrchestratorService", () => {
   });
 
   it("defaults the persisted message type to 'text' and tags it 'voice' when told to", async () => {
-    await service.handleMessage({ message: "Hi" });
+    await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
     expect(messageRepository.create).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "text" }));
 
-    await service.handleMessage({ message: "transcribed speech", messageType: "voice" });
+    await service.handleMessage({ farmerId: FARMER_ID, message: "transcribed speech", messageType: "voice" });
     expect(messageRepository.create).toHaveBeenNthCalledWith(3, expect.objectContaining({ type: "voice" }));
 
     // Bot replies are always "text" regardless of what triggered them — the bot never sends voice/photos.
     expect(messageRepository.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ role: "bot", type: "text" }));
     expect(messageRepository.create).toHaveBeenNthCalledWith(4, expect.objectContaining({ role: "bot", type: "text" }));
+  });
+
+  describe("weather context", () => {
+    it("looks up weather via the farmer's district and forwards it to generateReply", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      const weather = { district: "Musanze", todayRainfallProbability: 80, todayRainfallMm: 15, soilWorkable: false, outlook: [], fetchedAt: "now" };
+      weatherService.getForecast.mockResolvedValue(weather);
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "Should I water today?" });
+
+      expect(weatherService.getForecast).toHaveBeenCalledWith("Musanze");
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ weather }));
+    });
+
+    it("omits weather when the farmer has no district set", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: null });
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
+
+      expect(weatherService.getForecast).not.toHaveBeenCalled();
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ weather: undefined }));
+    });
+
+    it("omits weather gracefully (rather than throwing) when the lookup fails", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      weatherService.getForecast.mockRejectedValue(new Error("Open-Meteo down"));
+
+      const result = await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
+
+      expect(result.conversationId).toBe("conv-1");
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ weather: undefined }));
+    });
   });
 
   describe("handlePhotoMessage", () => {
@@ -188,6 +285,7 @@ describe("ChatOrchestratorService", () => {
       const imageBuffer = Buffer.from("fake-image-bytes");
 
       const result = await service.handlePhotoMessage({
+        farmerId: FARMER_ID,
         imageBuffer,
         mimeType: "image/jpeg",
         caption: "What is wrong with these leaves?",
@@ -214,7 +312,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("uses a placeholder text when no caption is given", async () => {
-      await service.handlePhotoMessage({ imageBuffer: Buffer.from("x"), mimeType: "image/png" });
+      await service.handlePhotoMessage({ farmerId: FARMER_ID, imageBuffer: Buffer.from("x"), mimeType: "image/png" });
 
       expect(messageRepository.create).toHaveBeenNthCalledWith(
         1,
@@ -223,7 +321,12 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("still searches knowledge scoped to the crop when there's no caption to extract keywords from", async () => {
-      await service.handlePhotoMessage({ imageBuffer: Buffer.from("x"), mimeType: "image/png", cropId: "maize-id" });
+      await service.handlePhotoMessage({
+        farmerId: FARMER_ID,
+        imageBuffer: Buffer.from("x"),
+        mimeType: "image/png",
+        cropId: "maize-id",
+      });
 
       expect(knowledgeService.search).toHaveBeenCalledWith("", "maize-id");
     });

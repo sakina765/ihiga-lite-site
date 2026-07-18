@@ -31,6 +31,10 @@ const KINYARWANDA_MARKERS = [
 const FRENCH_MARKERS = [
   "bonjour",
   "merci",
+  "oui",
+  "non",
+  "s'il",
+  "d'accord",
   "et",
   "que",
   "est",
@@ -45,6 +49,7 @@ const FRENCH_MARKERS = [
   "engrais",
   "champ",
   "maïs",
+  "riz",
   "les",
   "des",
 ];

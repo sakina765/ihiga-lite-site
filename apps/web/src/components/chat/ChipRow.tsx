@@ -12,18 +12,20 @@ export function ChipRow({
   }
 
   return (
-    <div className="flex flex-wrap gap-2 bg-parchment px-4 pb-3">
-      {chips.map((chip) => (
-        <button
-          key={chip}
-          type="button"
-          disabled={disabled}
-          onClick={() => onSelect(chip)}
-          className="max-w-full whitespace-normal break-words rounded-full bg-parchment-3 px-3 py-1.5 text-left text-xs font-medium text-sage-dark transition-colors hover:bg-parchment-2 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-dark"
-        >
-          {chip}
-        </button>
-      ))}
+    <div className="bg-parchment px-4 pb-3">
+      <div className="mx-auto flex w-full max-w-3xl flex-wrap gap-2">
+        {chips.map((chip) => (
+          <button
+            key={chip}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(chip)}
+            className="max-w-full whitespace-normal break-words rounded-full bg-parchment-3 px-3 py-1.5 text-left text-xs font-medium text-sage-dark transition-colors hover:bg-parchment-2 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-dark"
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,9 +1,13 @@
 import { BadGatewayException, BadRequestException, Body, Controller, Post, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Throttle } from "@nestjs/throttler";
 import { ChatOrchestratorService } from "./chat-orchestrator.service";
 import { GroqService } from "../ai/groq.service";
-import { ChatLanguage } from "../ai/types";
 import { ChatResponse, VoiceChatResponse } from "./chat.types";
+import { SendMessageDto } from "./dto/send-message.dto";
+import { SendVoiceDto } from "./dto/send-voice.dto";
+import { SendPhotoDto } from "./dto/send-photo.dto";
+import { isAudioSignature, isImageSignature } from "../common/file-signature.util";
 
 // Independent of whatever limits Groq's API itself enforces — these exist so a
 // huge upload gets rejected by multer/Nest before it's even buffered, instead
@@ -24,28 +28,10 @@ const ACCEPTED_AUDIO_MIME_TYPES = new Set([
 
 const ACCEPTED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-class SendMessageBody {
-  conversationId?: string;
-  message: string;
-  cropId?: string;
-  plantingDate?: string;
-  language?: ChatLanguage;
-}
-
-class SendVoiceBody {
-  conversationId?: string;
-  cropId?: string;
-  plantingDate?: string;
-  language?: ChatLanguage;
-}
-
-class SendPhotoBody {
-  conversationId?: string;
-  caption?: string;
-  cropId?: string;
-  plantingDate?: string;
-  language?: ChatLanguage;
-}
+// Moderate — these hit Groq (and voice additionally hits Whisper) on every
+// call, but a farmer legitimately retrying a garbled recording or a bad photo
+// a couple of times in quick succession shouldn't get blocked.
+const CHAT_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 
 @Controller("chat")
 export class ChatController {
@@ -55,21 +41,26 @@ export class ChatController {
   ) {}
 
   @Post("message")
-  async sendMessage(@Body() body: SendMessageBody): Promise<ChatResponse> {
-    if (!body?.message?.trim()) {
-      throw new BadRequestException("message is required");
-    }
+  @Throttle(CHAT_THROTTLE)
+  async sendMessage(@Body() body: SendMessageDto): Promise<ChatResponse> {
     return this.chatOrchestratorService.handleMessage(body);
   }
 
   @Post("voice")
+  @Throttle(CHAT_THROTTLE)
   @UseInterceptors(FileInterceptor("audio", { limits: { fileSize: MAX_AUDIO_SIZE_BYTES } }))
-  async sendVoiceMessage(@UploadedFile() audio: Express.Multer.File, @Body() body: SendVoiceBody): Promise<VoiceChatResponse> {
+  async sendVoiceMessage(@UploadedFile() audio: Express.Multer.File, @Body() body: SendVoiceDto): Promise<VoiceChatResponse> {
     if (!audio) {
       throw new BadRequestException("audio file is required");
     }
     if (!ACCEPTED_AUDIO_MIME_TYPES.has(audio.mimetype)) {
       throw new BadRequestException(`Unsupported audio type "${audio.mimetype}"`);
+    }
+    // The client-declared mimetype above is just a string it chose to send —
+    // confirm the actual bytes match a real audio file before handing them to
+    // Whisper, since a client could lie about the Content-Type.
+    if (!isAudioSignature(audio.buffer)) {
+      throw new BadRequestException("Uploaded file does not look like a valid audio file");
     }
 
     // Transcription and orchestration are kept as two clearly separate steps —
@@ -90,13 +81,17 @@ export class ChatController {
   }
 
   @Post("photo")
+  @Throttle(CHAT_THROTTLE)
   @UseInterceptors(FileInterceptor("image", { limits: { fileSize: MAX_IMAGE_SIZE_BYTES } }))
-  async sendPhotoMessage(@UploadedFile() image: Express.Multer.File, @Body() body: SendPhotoBody): Promise<ChatResponse> {
+  async sendPhotoMessage(@UploadedFile() image: Express.Multer.File, @Body() body: SendPhotoDto): Promise<ChatResponse> {
     if (!image) {
       throw new BadRequestException("image file is required");
     }
     if (!ACCEPTED_IMAGE_MIME_TYPES.has(image.mimetype)) {
       throw new BadRequestException(`Unsupported image type "${image.mimetype}" — use JPEG, PNG, or WebP`);
+    }
+    if (!isImageSignature(image.buffer)) {
+      throw new BadRequestException("Uploaded file does not look like a valid image");
     }
 
     return this.chatOrchestratorService.handlePhotoMessage({

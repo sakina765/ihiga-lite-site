@@ -9,6 +9,8 @@ import { SeasonModule } from "../season/season.module";
 import { CropsModule } from "../crops/crops.module";
 import { KnowledgeModule } from "../knowledge/knowledge.module";
 import { AiModule } from "../ai/ai.module";
+import { FarmersModule } from "../farmers/farmers.module";
+import { WeatherModule } from "../weather/weather.module";
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { AiModule } from "../ai/ai.module";
     CropsModule,
     KnowledgeModule,
     AiModule,
+    FarmersModule,
+    WeatherModule,
   ],
   providers: [ChatOrchestratorService],
   controllers: [ChatController],

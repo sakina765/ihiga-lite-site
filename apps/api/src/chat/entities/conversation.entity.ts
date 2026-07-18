@@ -13,6 +13,12 @@ export class Conversation {
   @Column({ type: "varchar", length: 2, nullable: true })
   language: ChatLanguage | null;
 
+  // Nullable for backward compatibility with any conversations created before
+  // Phase 5 — required in practice going forward since /chat/* now rejects
+  // requests without a farmerId.
+  @Column({ name: "farmer_id", type: "uuid", nullable: true })
+  farmerId: string | null;
+
   @Column({ name: "crop_id", type: "uuid", nullable: true })
   cropId: string | null;
 

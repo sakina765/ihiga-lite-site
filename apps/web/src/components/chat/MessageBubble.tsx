@@ -49,7 +49,12 @@ export function MessageBubble({ message, onRetry }: { message: DisplayMessage; o
         )}
         {message.text}
       </div>
-      {isUser && <span className="mt-1 text-[11px] text-ink-faint">{formatTimestamp(message.timestamp)}</span>}
+      {/* ink-soft, not ink-faint: this timestamp sits directly on the parchment
+          background (not inside an opaque bubble), and ink-faint only reaches
+          ~3.3:1 contrast there — already short of WCAG AA's 4.5:1 floor before
+          the background pattern is even added. ink-soft holds ~5.3:1 (and
+          still ~4.9:1 worst-case against the pattern at its darkest overlap). */}
+      {isUser && <span className="mt-1 text-[11px] text-ink-soft">{formatTimestamp(message.timestamp)}</span>}
     </div>
   );
 }

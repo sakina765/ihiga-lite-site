@@ -14,4 +14,16 @@ describe("LanguageService", () => {
   it("detects French from common markers and accented characters", () => {
     expect(service.detect("Bonjour, quand est-ce que je dois récolter le maïs?")).toBe("fr");
   });
+
+  it("detects a short French confirmation like 'Oui'", () => {
+    expect(service.detect("Oui")).toBe("fr");
+  });
+
+  it("detects a short French negation like 'Non'", () => {
+    expect(service.detect("Non merci")).toBe("fr");
+  });
+
+  it("detects a bare crop name in French, e.g. 'Riz'", () => {
+    expect(service.detect("Riz")).toBe("fr");
+  });
 });

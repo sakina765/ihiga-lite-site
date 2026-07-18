@@ -12,6 +12,10 @@ import { KnowledgeService } from "../knowledge/knowledge.service";
 import { KnowledgeFact } from "../knowledge/entities/knowledge-fact.entity";
 import { GroqService } from "../ai/groq.service";
 import { ChatLanguage, ConversationTurn, CropStageInfo } from "../ai/types";
+import { FarmersService } from "../farmers/farmers.service";
+import { Farmer } from "../farmers/entities/farmer.entity";
+import { WeatherService } from "../weather/weather.service";
+import { WeatherInfo } from "../weather/weather.types";
 import { parseIsoDateStringLocal } from "../common/date.util";
 import { extractKeywords } from "./extract-keywords";
 import { ChatResponse, HandleMessageParams, HandlePhotoMessageParams } from "./chat.types";
@@ -23,6 +27,7 @@ interface TurnContext {
   conversation: Conversation;
   season: SeasonInfo;
   cropStage?: CropStage;
+  weather?: WeatherInfo;
 }
 
 @Injectable()
@@ -37,11 +42,14 @@ export class ChatOrchestratorService {
     private readonly cropsService: CropsService,
     private readonly knowledgeService: KnowledgeService,
     private readonly groqService: GroqService,
+    private readonly farmersService: FarmersService,
+    private readonly weatherService: WeatherService,
   ) {}
 
   async handleMessage(params: HandleMessageParams): Promise<ChatResponse> {
-    const { conversation, season, cropStage } = await this.prepareTurnContext({
+    const { conversation, season, cropStage, weather } = await this.prepareTurnContext({
       conversationId: params.conversationId,
+      farmerId: params.farmerId,
       cropId: params.cropId,
       plantingDate: params.plantingDate,
       language: params.language,
@@ -70,6 +78,7 @@ export class ChatOrchestratorService {
       cropStage: cropStage ? this.toCropStageInfo(cropStage) : undefined,
       relevantFacts,
       conversationHistory,
+      weather,
     });
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
@@ -80,12 +89,13 @@ export class ChatOrchestratorService {
   /**
    * Photo analysis is different enough from text/voice (a vision model call
    * instead of generateReply) to warrant its own method, but reuses the same
-   * conversation/season/crop-stage/knowledge-context gathering and persistence
-   * pattern via the shared private helpers below.
+   * conversation/season/crop-stage/weather/knowledge-context gathering and
+   * persistence pattern via the shared private helpers below.
    */
   async handlePhotoMessage(params: HandlePhotoMessageParams): Promise<ChatResponse> {
-    const { conversation, season, cropStage } = await this.prepareTurnContext({
+    const { conversation, season, cropStage, weather } = await this.prepareTurnContext({
       conversationId: params.conversationId,
+      farmerId: params.farmerId,
       cropId: params.cropId,
       plantingDate: params.plantingDate,
       language: params.language,
@@ -109,6 +119,7 @@ export class ChatOrchestratorService {
       cropStage: cropStage ? this.toCropStageInfo(cropStage) : undefined,
       relevantFacts,
       caption: params.caption,
+      weather,
     });
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
@@ -118,6 +129,7 @@ export class ChatOrchestratorService {
 
   private async prepareTurnContext(input: {
     conversationId?: string;
+    farmerId: string;
     cropId?: string;
     plantingDate?: string;
     language?: ChatLanguage;
@@ -126,6 +138,7 @@ export class ChatOrchestratorService {
     let conversation = await this.loadOrCreateConversation(input.conversationId);
 
     conversation.language = this.resolveLanguage(input.language, input.languageDetectionText, conversation);
+    conversation.farmerId = input.farmerId;
     if (input.cropId) {
       conversation.cropId = input.cropId;
     }
@@ -136,8 +149,10 @@ export class ChatOrchestratorService {
 
     const season = this.seasonService.getCurrentSeason();
     const cropStage = await this.resolveCropStage(conversation);
+    const farmer = await this.farmersService.getById(input.farmerId);
+    const weather = await this.resolveWeather(farmer);
 
-    return { conversation, season, cropStage };
+    return { conversation, season, cropStage, weather };
   }
 
   private async persistBotReply(conversationId: string, replyText: string): Promise<void> {
@@ -170,7 +185,7 @@ export class ChatOrchestratorService {
       }
       this.logger.warn(`conversationId "${conversationId}" not found — starting a new conversation instead`);
     }
-    return this.conversationRepository.create({ language: null, cropId: null, plantingDate: null });
+    return this.conversationRepository.create({ language: null, farmerId: null, cropId: null, plantingDate: null });
   }
 
   private resolveLanguage(
@@ -181,10 +196,31 @@ export class ChatOrchestratorService {
     if (explicitLanguage) {
       return explicitLanguage;
     }
-    if (conversation.language) {
+    // Re-detect from THIS message every turn rather than sticking with
+    // whatever the conversation's language was set to on turn one — farmers
+    // switch language mid-conversation (typing in French after starting in
+    // English, say) and expect Ihiga to follow along.
+    //
+    // But detect() has no marker list for English — "en" out of detect() is
+    // ambiguous: it means either "this is genuinely English" OR "no fr/rw
+    // markers matched at all" (a crop name, a short reply, an unlisted word).
+    // Once a conversation has a confidently-detected non-English language,
+    // treat a later "en" result as the latter (noise), not a real signal to
+    // reset — a single ambiguous message (e.g. "Riz") shouldn't silently
+    // knock an established French/Kinyarwanda conversation back to English.
+    // A confident fr/rw detection always wins and can still switch between
+    // the two.
+    if (detectionText.trim()) {
+      const detected = this.languageService.detect(detectionText);
+      if (detected !== "en" || !conversation.language) {
+        return detected;
+      }
       return conversation.language;
     }
-    return this.languageService.detect(detectionText);
+    // No text to detect from (e.g. an uncaptioned photo) — nothing to go on,
+    // so keep whatever language the conversation is already in rather than
+    // resetting to English by default.
+    return conversation.language ?? "en";
   }
 
   private async resolveCropStage(conversation: Conversation): Promise<CropStage | undefined> {
@@ -196,6 +232,19 @@ export class ChatOrchestratorService {
       return await this.cropsService.getCurrentStage(conversation.cropId, plantingDate);
     } catch (error) {
       this.logger.warn(`Could not resolve crop stage for cropId="${conversation.cropId}": ${(error as Error).message}`);
+      return undefined;
+    }
+  }
+
+  /** Absent (not an error) when the farmer isn't found or hasn't given a district yet. */
+  private async resolveWeather(farmer: Farmer | null): Promise<WeatherInfo | undefined> {
+    if (!farmer?.district) {
+      return undefined;
+    }
+    try {
+      return await this.weatherService.getForecast(farmer.district);
+    } catch (error) {
+      this.logger.warn(`Could not resolve weather for district="${farmer.district}": ${(error as Error).message}`);
       return undefined;
     }
   }

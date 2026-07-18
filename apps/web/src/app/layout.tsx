@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { IntroGate } from "../components/IntroGate";
 
 export const metadata: Metadata = {
   title: "Ihiga Lite",
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <IntroGate>{children}</IntroGate>
+      </body>
     </html>
   );
 }

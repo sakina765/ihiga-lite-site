@@ -18,7 +18,11 @@ endpoint and hands the text to the same orchestrator flow as a typed message;
 `POST /chat/photo` sends a plant photo to Groq's vision model (grounded with
 the same season/crop/knowledge context, with an explicit honesty/hedging
 system prompt — a wrong confident pest/disease call could lead to the wrong
-treatment on a real crop).
+treatment on a real crop). **Phase 5** added farmer identity: a phone-number
+onboarding gate in front of the chat UI, live weather (Open-Meteo, no API key)
+as a 4th grounding context alongside season/crop/knowledge, and a real daily
+SMS notification job (Africa's Talking) for crop-stage changes and weather
+risk — replacing the Phase 0 stub.
 
 ## Layout
 
@@ -128,6 +132,8 @@ conversation persistence:
 
 Once a conversation exists, `cropId`/`plantingDate`/`language` are remembered
 on it — later turns in the same `conversationId` don't need to repeat them.
+`farmerId` is now **required** on every `/chat/*` endpoint — register one
+first via `POST /farmers/register`.
 
 `POST /chat/voice` (multipart, field `audio`) transcribes the clip via Groq's
 Whisper endpoint, then runs it through the exact same flow as `POST
@@ -142,6 +148,38 @@ up to 8MB; JPEG/PNG/WebP only.
 Every `Message` row now has a `type` (`text` | `voice` | `photo`) recording
 which input modality produced it — bot replies are always `text`.
 
+## Farmers & weather
+
+`POST /farmers/register` — `{ phoneNumber, district? }` → `{ farmerId, phoneNumber, district }`.
+Idempotent by phone number (normalizes common Rwandan formats — `0788123456`,
+`+250788123456`, `788123456`, with spaces/dashes — to `+2507XXXXXXXX`); calling
+it twice with the same number returns the same `farmerId` rather than
+duplicating. Store the returned `farmerId` client-side (the web app uses
+`localStorage`) and send it on every `/chat/*` call.
+
+Weather (Open-Meteo, no API key) is looked up by the farmer's `district` and
+wired into the chat orchestrator as a 4th grounding context alongside
+season/crop/knowledge — e.g. it can tell Groq "22% chance of rain today" so a
+reply can reasonably suggest irrigating. Only a handful of districts have
+coordinates configured so far (see `apps/api/src/weather/rwanda-districts.ts`
+— Rwanda has 30 total); farmers outside that list just get no weather context,
+gracefully, not an error. Responses are cached in-memory for 1 hour per
+district.
+
+## Notifications (SMS)
+
+A daily `@Cron` job (`NotificationSchedulerService`, `apps/api/src/notifications/`)
+checks each farmer's most recent active crop conversation and sends a short SMS
+via Africa's Talking when either: (a) their crop has reached a new stage since
+the last notification, or (b) the weather forecast says the soil isn't
+workable today and no weather alert has gone out yet today. Each farmer tracks
+`lastNotifiedStageId` / `lastNotifiedWeatherAlertDate` so the same alert
+doesn't repeat daily.
+
+`SmsService.sendSms()` never throws — missing/placeholder credentials or a
+real send failure both log clearly and return normally, so one SMS problem
+can't crash the batch job for every other farmer.
+
 ## Manual verification (temporary)
 
 `apps/api` has a temporary `/debug` controller (see the comments in
@@ -151,8 +189,12 @@ client. **Remove or protect this before production.**
 - `GET /debug/season?date=YYYY-MM-DD`
 - `GET /debug/crops/:slug/stage?plantingDate=YYYY-MM-DD`
 - `GET /debug/knowledge/search?q=...&cropId=...&topic=...`
-- `POST /debug/chat/message` — same body as `POST /chat/message` above; hits
-  the real orchestrator end-to-end, including a real Groq API call.
+- `GET /debug/weather?district=Musanze` — hits the real Open-Meteo API.
+- `POST /debug/chat/message` — same body as `POST /chat/message` above (now
+  requires `farmerId` too); hits the real orchestrator end-to-end, including a
+  real Groq API call.
+- `POST /debug/notifications/run` — runs the same logic as the daily `@Cron`
+  job immediately, without waiting for the real schedule.
 
 ## Other useful commands
 

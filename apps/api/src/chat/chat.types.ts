@@ -4,6 +4,7 @@ import type { MessageType } from "./entities/message.entity";
 
 export interface HandleMessageParams {
   conversationId?: string;
+  farmerId: string;
   message: string;
   cropId?: string;
   /** YYYY-MM-DD */
@@ -16,6 +17,7 @@ export interface HandleMessageParams {
 
 export interface HandlePhotoMessageParams {
   conversationId?: string;
+  farmerId: string;
   imageBuffer: Buffer;
   mimeType: string;
   /** Optional text the farmer sent alongside the photo. */

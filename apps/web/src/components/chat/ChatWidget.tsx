@@ -8,6 +8,7 @@ import { SeasonStrip } from "./SeasonStrip";
 import { MessageList } from "./MessageList";
 import { ChipRow } from "./ChipRow";
 import { InputBar } from "./InputBar";
+import { ChatSidebar } from "./sidebar/ChatSidebar";
 import type { DisplayMessage } from "./types";
 
 function makeId(): string {
@@ -41,7 +42,7 @@ function getLoadingCopy(kind: LoadingKind, isSlow: boolean): { label?: string; s
     : { label: undefined, srLabel: "Ihiga is typing…" };
 }
 
-export function ChatWidget() {
+export function ChatWidget({ farmerId }: { farmerId: string }) {
   // conversationId is created lazily by the API on the FIRST real message — we never
   // call the API on mount just to obtain one. If we did, every visitor who opens the
   // page and never sends a message would leave behind an orphaned Conversation row
@@ -86,7 +87,7 @@ export function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const response = await sendChatMessage({ conversationId: conversationIdRef.current, message: text });
+      const response = await sendChatMessage({ conversationId: conversationIdRef.current, farmerId, message: text });
 
       conversationIdRef.current = response.conversationId;
       setSeason(response.season);
@@ -106,14 +107,14 @@ export function ChatWidget() {
       setIsLoading(false);
       setLoadingKind(null);
     }
-  }, []);
+  }, [farmerId]);
 
   const submitVoiceMessage = useCallback(async (audioBlob: Blob) => {
     setLoadingKind("voice");
     setIsLoading(true);
 
     try {
-      const response = await sendVoiceMessage({ conversationId: conversationIdRef.current, audioBlob });
+      const response = await sendVoiceMessage({ conversationId: conversationIdRef.current, farmerId, audioBlob });
 
       conversationIdRef.current = response.conversationId;
       setSeason(response.season);
@@ -136,7 +137,7 @@ export function ChatWidget() {
       setIsLoading(false);
       setLoadingKind(null);
     }
-  }, []);
+  }, [farmerId]);
 
   const submitPhotoMessage = useCallback(async (imageFile: File) => {
     setLoadingKind("photo");
@@ -144,7 +145,7 @@ export function ChatWidget() {
     const imageUrl = URL.createObjectURL(imageFile);
 
     try {
-      const response = await sendPhotoMessage({ conversationId: conversationIdRef.current, imageFile });
+      const response = await sendPhotoMessage({ conversationId: conversationIdRef.current, farmerId, imageFile });
 
       conversationIdRef.current = response.conversationId;
       setSeason(response.season);
@@ -166,7 +167,7 @@ export function ChatWidget() {
       setIsLoading(false);
       setLoadingKind(null);
     }
-  }, []);
+  }, [farmerId]);
 
   const handleRetry = useCallback(() => {
     const retry = lastFailedActionRef.current;
@@ -179,24 +180,42 @@ export function ChatWidget() {
   }, []);
 
   return (
-    <div className="min-h-dvh bg-parchment sm:bg-soil-deep sm:py-8">
-      <div className="mx-auto flex h-dvh max-w-[400px] flex-col overflow-hidden bg-parchment sm:h-[720px] sm:rounded-3xl sm:border sm:border-parchment-2 sm:shadow-xl">
-        <ChatHeader language={language} />
-        <SeasonStrip season={season} />
-        <MessageList
-          messages={messages}
-          isLoading={isLoading}
-          loadingLabel={loadingLabel}
-          loadingSrLabel={loadingSrLabel}
-          onRetry={handleRetry}
-        />
-        <ChipRow chips={latestChips} onSelect={submitMessage} disabled={isLoading} />
-        <InputBar
-          onSend={submitMessage}
-          onVoiceMessage={submitVoiceMessage}
-          onPhotoMessage={submitPhotoMessage}
-          disabled={isLoading}
-        />
+    // Genuinely full-width/full-height on desktop, like WhatsApp Web/Slack/
+    // ChatGPT — not a centered card with empty page showing on both sides.
+    // Each bar below (header, season strip, message list, input) spans the
+    // full width itself; only the CONTENT inside each is centered to a
+    // comfortable max-width, so text/controls don't stretch uncomfortably
+    // wide on an ultrawide monitor while the screen still reads as fully used.
+    <div className="flex h-dvh flex-col bg-parchment">
+      <ChatHeader language={language} />
+      <SeasonStrip season={season} />
+      {/* The sidebar lives INSIDE the chat body, below the header/season
+          strip — not as a page-level sibling spanning the full viewport
+          height, which would make it read as a separate overlay rather than
+          part of this chat screen. min-h-0 (not just flex-1) is required on
+          both nested flex columns below: MessageList gets its internal
+          scroll from `flex-1 overflow-hidden` + an absolutely-positioned
+          `overflow-y-auto` child, which only works if its flex ancestor
+          chain has a properly bounded height — omit min-h-0 and the chat
+          pane grows past the viewport instead of scrolling internally. */}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <ChatSidebar farmerId={farmerId} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <MessageList
+            messages={messages}
+            isLoading={isLoading}
+            loadingLabel={loadingLabel}
+            loadingSrLabel={loadingSrLabel}
+            onRetry={handleRetry}
+          />
+          <ChipRow chips={latestChips} onSelect={submitMessage} disabled={isLoading} />
+          <InputBar
+            onSend={submitMessage}
+            onVoiceMessage={submitVoiceMessage}
+            onPhotoMessage={submitPhotoMessage}
+            disabled={isLoading}
+          />
+        </div>
       </div>
     </div>
   );

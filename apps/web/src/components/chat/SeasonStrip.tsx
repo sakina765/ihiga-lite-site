@@ -15,15 +15,17 @@ export function SeasonStrip({ season }: { season: SeasonInfo | null }) {
   if (!season) {
     return (
       <div className="border-b border-parchment-2 bg-parchment-3 px-4 py-2 text-xs text-ink-faint">
-        🗓️ Loading season…
+        <div className="mx-auto w-full max-w-3xl">🗓️ Loading season…</div>
       </div>
     );
   }
 
   return (
     <div className="border-b border-parchment-2 bg-parchment-3 px-4 py-2 text-xs text-ink-soft">
-      🗓️ Season {season.code} ({season.localName}) · {formatMonthRange(season.startDate, season.endDate)} ·{" "}
-      {SEASON_DESCRIPTOR[season.code]}
+      <div className="mx-auto w-full max-w-3xl">
+        🗓️ Season {season.code} ({season.localName}) · {formatMonthRange(season.startDate, season.endDate)} ·{" "}
+        {SEASON_DESCRIPTOR[season.code]}
+      </div>
     </div>
   );
 }

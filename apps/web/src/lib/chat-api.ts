@@ -20,6 +20,7 @@ export async function sendChatMessage(body: ChatMessageRequest): Promise<ChatMes
 
 interface SendVoiceMessageParams {
   conversationId?: string;
+  farmerId: string;
   audioBlob: Blob;
   cropId?: string;
   plantingDate?: string;
@@ -28,6 +29,7 @@ interface SendVoiceMessageParams {
 
 export async function sendVoiceMessage(params: SendVoiceMessageParams): Promise<VoiceChatMessageResponse> {
   const formData = new FormData();
+  formData.append("farmerId", params.farmerId);
   if (params.conversationId) formData.append("conversationId", params.conversationId);
   if (params.cropId) formData.append("cropId", params.cropId);
   if (params.plantingDate) formData.append("plantingDate", params.plantingDate);
@@ -45,6 +47,7 @@ export async function sendVoiceMessage(params: SendVoiceMessageParams): Promise<
 
 interface SendPhotoMessageParams {
   conversationId?: string;
+  farmerId: string;
   imageFile: File;
   caption?: string;
   cropId?: string;
@@ -54,6 +57,7 @@ interface SendPhotoMessageParams {
 
 export async function sendPhotoMessage(params: SendPhotoMessageParams): Promise<ChatMessageResponse> {
   const formData = new FormData();
+  formData.append("farmerId", params.farmerId);
   if (params.conversationId) formData.append("conversationId", params.conversationId);
   if (params.caption) formData.append("caption", params.caption);
   if (params.cropId) formData.append("cropId", params.cropId);

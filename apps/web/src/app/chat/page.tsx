@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ChatWidget } from "../../components/chat/ChatWidget";
+import { ChatGate } from "../../components/chat/ChatGate";
 
 export const metadata: Metadata = {
   title: "Ihiga — Chat",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function ChatPage() {
-  return <ChatWidget />;
+  return <ChatGate />;
 }
