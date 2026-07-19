@@ -27,10 +27,37 @@ export class Farmer {
   @Column({ name: "last_notified_weather_alert_date", type: "date", nullable: true })
   lastNotifiedWeatherAlertDate: string | null;
 
-  /** Optional GPS shared at onboarding — enables farm-exact weather instead of a district centroid. */
+  /**
+   * Raw device GPS reading from the onboarding "Share my farm location"
+   * shortcut — kept as-is for backward compatibility with farmers who
+   * registered before the cascading location picker existed. When the GPS
+   * shortcut is used to auto-fill the cascading picker, this stays populated
+   * as the original reading even after sectorId/resolvedLatitude are set.
+   */
   @Column({ name: "farm_latitude", type: "double precision", nullable: true })
   farmLatitude: number | null;
 
   @Column({ name: "farm_longitude", type: "double precision", nullable: true })
   farmLongitude: number | null;
+
+  /** Sector chosen via the cascading location picker (manually or GPS-auto-filled-then-reviewed). Nullable — older farmers may only have a flat `district` string. */
+  @Column({ name: "sector_id", type: "uuid", nullable: true })
+  sectorId: string | null;
+
+  /** Optional free-text village/cell name, geocoded via GeocodingService. */
+  @Column({ name: "village_text", type: "varchar", nullable: true })
+  villageText: string | null;
+
+  /**
+   * Final resolved farm coordinate for weather lookups, in precedence order:
+   * geocoded village > chosen sector's centroid > (fallback) farmLatitude/
+   * farmLongitude. Distinct from farmLatitude/farmLongitude because those
+   * are the raw device reading, while this is the farmer-reviewed/confirmed
+   * location once resolved through the picker.
+   */
+  @Column({ name: "resolved_latitude", type: "double precision", nullable: true })
+  resolvedLatitude: number | null;
+
+  @Column({ name: "resolved_longitude", type: "double precision", nullable: true })
+  resolvedLongitude: number | null;
 }

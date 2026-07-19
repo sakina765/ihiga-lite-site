@@ -13,18 +13,24 @@ export class FarmersController {
   @Post("register")
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async register(@Body() body: RegisterFarmerDto) {
-    const farmer = await this.farmersService.registerOrFind(
-      body.phoneNumber,
-      body.district?.trim() || undefined,
-      body.latitude,
-      body.longitude,
-    );
+    const farmer = await this.farmersService.registerOrFind({
+      phoneNumber: body.phoneNumber,
+      district: body.district?.trim() || undefined,
+      latitude: body.latitude,
+      longitude: body.longitude,
+      sectorId: body.sectorId,
+      villageText: body.villageText?.trim() || undefined,
+    });
     return {
       farmerId: farmer.id,
       phoneNumber: farmer.phoneNumber,
       district: farmer.district,
       latitude: farmer.farmLatitude,
       longitude: farmer.farmLongitude,
+      sectorId: farmer.sectorId,
+      villageText: farmer.villageText,
+      resolvedLatitude: farmer.resolvedLatitude,
+      resolvedLongitude: farmer.resolvedLongitude,
     };
   }
 }

@@ -7,6 +7,8 @@ export interface WeatherOutlookDay {
 
 export interface WeatherInfo {
   district: string;
+  /** Rounded to the nearest degree Celsius — Open-Meteo's daily max for today. */
+  todayTemperatureC: number;
   todayRainfallProbability: number;
   todayRainfallMm: number;
   /** false = heavy rain today (or very likely) — better to wait before working the soil. */

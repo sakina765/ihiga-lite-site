@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ChatLanguage } from "@ihiga-lite/shared";
 import robotGif from "../../app/robot.gif";
 
@@ -9,7 +10,19 @@ const LANGUAGE_LABELS: Record<ChatLanguage, string> = {
 
 export function ChatHeader({ language }: { language: ChatLanguage | null }) {
   return (
-    <header className="bg-soil-deep px-4 py-3">
+    <header className="relative bg-soil-deep px-4 py-3">
+      {/* Pinned to the header's own left edge, independent of the mx-auto
+          centered content below — inside that centered block, the arrow
+          would drift away from the true left edge on any viewport wider
+          than max-w-3xl (768px), landing near the middle-left instead of
+          flush against the actual side of the screen. */}
+      <Link
+        href="/"
+        aria-label="Back to home"
+        className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-xl leading-none text-parchment focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf"
+      >
+        <span aria-hidden="true">←</span>
+      </Link>
       <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
         <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-sage" aria-hidden="true">
           {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> guarantees

@@ -2,11 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { motion } from "motion/react";
 import heroBg from "../../app/herobg.jpg";
 import logo from "../../app/Ihiga3d.png";
 import { LineIcon, type LineIconName } from "../icons/lineIcons";
 import { usePrefersReducedMotion } from "../intro/usePrefersReducedMotion";
 import { MarqueeAnimation } from "../ui/marquee-effect";
+import { FloatingMascot } from "./FloatingMascot";
 import { ScrollReveal } from "./ScrollReveal";
 
 const REPO_URL = "https://github.com/sakina765/ihiga-lite-site";
@@ -55,12 +57,23 @@ const STEPS = [
 
 function FeatureCard({ icon, title, description, delay }: { icon: LineIconName; title: string; description: string; delay: number }) {
   return (
-    <ScrollReveal delay={delay} className="rounded-2xl border border-parchment-2 bg-white p-6">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-parchment-3 text-sage-dark">
-        <LineIcon name={icon} size={26} strokeWidth={1.6} />
+    <ScrollReveal delay={delay}>
+      {/* A separate plain div for the hover styling, not ScrollReveal's own
+          wrapper — ScrollReveal's motion.div permanently controls `transform`
+          via inline style (for its entrance fade/slide-up), and an inline
+          style always beats a CSS `:hover` class targeting the same
+          property, so a hover:-translate-y here would silently never fire. */}
+      <div className="group rounded-2xl border border-parchment-2 bg-white p-6 transition-all duration-300 hover:-translate-y-1.5 hover:border-sage hover:shadow-xl hover:shadow-sage/10">
+        <motion.div
+          className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-parchment-3 text-sage-dark transition-colors duration-300 group-hover:bg-sage group-hover:text-parchment"
+          whileHover={{ scale: 1.15, rotate: 8 }}
+          transition={{ type: "spring", stiffness: 300, damping: 12 }}
+        >
+          <LineIcon name={icon} size={26} strokeWidth={1.6} />
+        </motion.div>
+        <h3 className="text-base font-semibold text-ink transition-colors duration-300 group-hover:text-sage-dark">{title}</h3>
+        <p className="mt-1 text-sm text-ink-soft">{description}</p>
       </div>
-      <h3 className="text-base font-semibold text-ink">{title}</h3>
-      <p className="mt-1 text-sm text-ink-soft">{description}</p>
     </ScrollReveal>
   );
 }
@@ -113,14 +126,19 @@ export function HomePage() {
 
       {/* 3. Feature grid */}
       <section className="bg-parchment-3 px-6 py-16">
-        <div className="mx-auto max-w-5xl">
-          <ScrollReveal>
-            <h2 className="text-center text-2xl font-semibold text-ink sm:text-3xl">What Ihiga does</h2>
+        <div className="mx-auto max-w-6xl lg:grid lg:grid-cols-[220px_1fr] lg:items-center lg:gap-12">
+          <ScrollReveal className="mb-10 lg:mb-0">
+            <FloatingMascot />
           </ScrollReveal>
-          <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((feature, i) => (
-              <FeatureCard key={feature.title} {...feature} delay={Math.min(i, 3) * 0.08} />
-            ))}
+          <div>
+            <ScrollReveal>
+              <h2 className="text-center text-2xl font-semibold text-ink sm:text-3xl lg:text-left">What Ihiga does</h2>
+            </ScrollReveal>
+            <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {FEATURES.map((feature, i) => (
+                <FeatureCard key={feature.title} {...feature} delay={Math.min(i, 3) * 0.08} />
+              ))}
+            </div>
           </div>
         </div>
       </section>

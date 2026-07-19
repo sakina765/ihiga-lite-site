@@ -36,6 +36,17 @@ export interface ChatResponse {
   language: ChatLanguage;
   season: SeasonInfo;
   cropStage?: CropStageInfo;
+  /**
+   * Present when Groq just confidently extracted a crop+planting date this
+   * turn and it's awaiting the farmer's confirmation (suggestedChips will
+   * contain the confirm/deny pair) — not yet written to cropId/plantingDate.
+   */
+  pendingCropConfirmation?: {
+    cropSlug: string;
+    cropName: string;
+    /** YYYY-MM-DD */
+    plantingDate: string;
+  };
 }
 
 export interface VoiceChatResponse extends ChatResponse {

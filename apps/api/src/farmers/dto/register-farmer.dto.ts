@@ -1,4 +1,4 @@
-import { IsLatitude, IsLongitude, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsLatitude, IsLongitude, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 
 export class RegisterFarmerDto {
   // Exact format (0788123456 / +250788123456 / etc.) is enforced by
@@ -9,6 +9,8 @@ export class RegisterFarmerDto {
   @MaxLength(20)
   phoneNumber: string;
 
+  // Backward-compat flat district string — the cascading picker no longer
+  // sends this on its own (it sends sectorId), but older callers/tests may.
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -21,4 +23,14 @@ export class RegisterFarmerDto {
   @IsOptional()
   @IsLongitude()
   longitude?: number;
+
+  /** Sector chosen via the cascading location picker (manually or GPS-auto-filled-then-reviewed). */
+  @IsOptional()
+  @IsUUID()
+  sectorId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  villageText?: string;
 }

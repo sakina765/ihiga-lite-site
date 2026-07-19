@@ -66,6 +66,15 @@ export const LINE_ICONS: Record<string, React.ReactNode> = {
       <line x1="0" y1="-2" x2="4" y2="-4" />
     </>
   ),
+  tractor: (
+    <>
+      <circle cx="-5" cy="6" r="3" />
+      <circle cx="6" cy="6" r="4.5" />
+      <path d="M-9,3 L-9,-2 L-3,-2 L-3,3 Z" />
+      <path d="M-3,-2 L3,-2 L5,3" />
+      <line x1="-6" y1="-2" x2="-6" y2="-7" />
+    </>
+  ),
   wateringCan: (
     <>
       <path d="M-7,3 L-7,-3 C-7,-5 -5,-6 -3,-6 L3,-6 C5,-6 6,-5 6,-3 L6,3 Z" />

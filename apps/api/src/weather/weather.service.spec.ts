@@ -1,8 +1,9 @@
 import { WeatherService } from "./weather.service";
 
-function mockOpenMeteoResponse(overrides: { probabilities?: number[]; sums?: number[] } = {}) {
+function mockOpenMeteoResponse(overrides: { probabilities?: number[]; sums?: number[]; temperatures?: number[] } = {}) {
   const probabilities = overrides.probabilities ?? [10, 20, 30, 15, 5];
   const sums = overrides.sums ?? [0, 1.2, 2.5, 0.4, 0];
+  const temperatures = overrides.temperatures ?? [22.4, 23.1, 21.8, 20.9, 22.0];
   return {
     ok: true,
     status: 200,
@@ -11,6 +12,7 @@ function mockOpenMeteoResponse(overrides: { probabilities?: number[]; sums?: num
         time: ["2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21"],
         precipitation_probability_max: probabilities,
         precipitation_sum: sums,
+        temperature_2m_max: temperatures,
       },
     }),
   };
@@ -32,6 +34,7 @@ describe("WeatherService", () => {
     const result = await service.getForecast("Musanze");
 
     expect(result.district).toBe("Musanze");
+    expect(result.todayTemperatureC).toBe(22);
     expect(result.todayRainfallProbability).toBe(10);
     expect(result.todayRainfallMm).toBe(0);
     expect(result.soilWorkable).toBe(true);
@@ -40,6 +43,14 @@ describe("WeatherService", () => {
     const requestedUrl = fetchMock.mock.calls[0][0] as string;
     expect(requestedUrl).toContain("api.open-meteo.com");
     expect(requestedUrl).toContain("latitude=-1.4995");
+  });
+
+  it("rounds today's temperature to the nearest whole degree", async () => {
+    fetchMock.mockResolvedValue(mockOpenMeteoResponse({ temperatures: [22.6, 23.1, 21.8, 20.9, 22.0] }));
+
+    const result = await service.getForecast("Musanze");
+
+    expect(result.todayTemperatureC).toBe(23);
   });
 
   it("flags soil as not workable when today's rainfall is heavy", async () => {

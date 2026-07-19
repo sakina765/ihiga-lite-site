@@ -1,4 +1,5 @@
 import type { CropSuggestionsResponse } from "@ihiga-lite/shared";
+import { EmptyStatePrompt } from "./EmptyStatePrompt";
 
 export function CropSuggestionsCard({
   data,
@@ -16,7 +17,7 @@ export function CropSuggestionsCard({
     return <p className="text-xs text-ink-faint">Crop suggestions unavailable right now.</p>;
   }
   if (data.crops.length === 0) {
-    return <p className="text-xs text-ink-faint">Add your district at registration to see crop suggestions here.</p>;
+    return <EmptyStatePrompt icon="🌱" label="Add your district to see suggestions" />;
   }
 
   return (

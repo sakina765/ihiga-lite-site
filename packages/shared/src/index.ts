@@ -34,10 +34,15 @@ export interface ChatMessageRequest {
 
 export interface RegisterFarmerRequest {
   phoneNumber: string;
+  /** Backward-compat flat district string — still accepted, but the cascading picker sends sectorId instead. */
   district?: string;
   /** Optional GPS shared at onboarding — enables farm-exact weather instead of a district centroid. */
   latitude?: number;
   longitude?: number;
+  /** Sector chosen via the cascading location picker (manually, or GPS-auto-filled and reviewed). */
+  sectorId?: string;
+  /** Optional free-text village/cell, geocoded server-side via GeocodingService on registration. */
+  villageText?: string;
 }
 
 export interface RegisterFarmerResponse {
@@ -46,6 +51,30 @@ export interface RegisterFarmerResponse {
   district: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  sectorId?: string | null;
+  villageText?: string | null;
+  resolvedLatitude?: number | null;
+  resolvedLongitude?: number | null;
+}
+
+/** A Rwandan sector (umurenge) — powers the onboarding picker's sector dropdown and the sidebar's district drill-down. */
+export interface Sector {
+  id: string;
+  district: string;
+  name: string;
+  nameRw: string | null;
+  lat: number;
+  lng: number;
+  /** true = seed-time approximation from the district centroid, not a verified sector coordinate. */
+  coordinatesApproximated: boolean;
+}
+
+/** One row of the sidebar's District -> Sector weather drill-down. */
+export interface SectorWeather {
+  id: string;
+  name: string;
+  nameRw: string | null;
+  weather: WeatherInfo;
 }
 
 export interface WeatherOutlookDay {
@@ -57,6 +86,8 @@ export interface WeatherOutlookDay {
 
 export interface WeatherInfo {
   district: string;
+  /** Rounded to the nearest degree Celsius — Open-Meteo's daily max for today. */
+  todayTemperatureC: number;
   todayRainfallProbability: number;
   todayRainfallMm: number;
   /** false = heavy rain today (or very likely) — better to wait before working the soil. */
@@ -97,6 +128,14 @@ export interface CurrentCropResponse {
   plantingDate: string;
 }
 
+/** Manual fallback form's crop dropdown — GET /crops. */
+export interface CropOption {
+  id: string;
+  name: string;
+  localName: string;
+  slug: string;
+}
+
 export interface ChatMessageResponse {
   conversationId: string;
   replyText: string;
@@ -104,6 +143,17 @@ export interface ChatMessageResponse {
   language: ChatLanguage;
   season: SeasonInfo;
   cropStage?: CropStageInfo;
+  /**
+   * Present when Groq just confidently extracted a crop+planting date this
+   * turn and it's awaiting the farmer's confirmation (suggestedChips will
+   * contain the confirm/deny pair) — not yet written to the tracked crop.
+   */
+  pendingCropConfirmation?: {
+    cropSlug: string;
+    cropName: string;
+    /** YYYY-MM-DD */
+    plantingDate: string;
+  };
 }
 
 export interface VoiceChatMessageResponse extends ChatMessageResponse {

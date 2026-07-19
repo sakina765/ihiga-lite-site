@@ -8,7 +8,8 @@ export function AlertsStrip({ data }: { data: TodayWeatherResponse | null }) {
   }
 
   return (
-    <div role="status" className="border-b border-clay/30 bg-clay/10 px-4 py-2 text-xs text-clay">
+    <div role="status" className="border-b border-clay/30 bg-clay/10 px-4 py-2 text-xs text-clay backdrop-blur-sm">
+      <span aria-hidden="true">⚠️ </span>
       {weather.soilWorkableReason ?? "Weather risk today — check before working the soil."}
     </div>
   );

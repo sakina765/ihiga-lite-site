@@ -59,6 +59,8 @@ describe("GroqService", () => {
       replyText: "Plant now",
       suggestedChips: ["When to water?"],
       detectedTopics: ["planting"],
+      extractedCropSlug: null,
+      extractedPlantingDate: null,
     });
   });
 

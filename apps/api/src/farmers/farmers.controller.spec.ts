@@ -13,10 +13,14 @@ describe("FarmersController", () => {
 
   beforeEach(async () => {
     farmersService = {
-      registerOrFind: jest.fn(async (phoneNumber: string, district?: string) => ({
+      registerOrFind: jest.fn(async (params: { phoneNumber: string; district?: string }) => ({
         id: "33333333-3333-4333-8333-333333333333",
-        phoneNumber,
-        district: district ?? null,
+        phoneNumber: params.phoneNumber,
+        district: params.district ?? null,
+        sectorId: null,
+        villageText: null,
+        resolvedLatitude: null,
+        resolvedLongitude: null,
       })),
     };
 
@@ -43,12 +47,46 @@ describe("FarmersController", () => {
   it("registers a farmer with a valid phone number", async () => {
     const response = await request(app.getHttpServer()).post("/farmers/register").send({ phoneNumber: "0788123456" }).expect(201);
 
-    expect(farmersService.registerOrFind).toHaveBeenCalledWith("0788123456", undefined, undefined, undefined);
+    expect(farmersService.registerOrFind).toHaveBeenCalledWith({
+      phoneNumber: "0788123456",
+      district: undefined,
+      latitude: undefined,
+      longitude: undefined,
+      sectorId: undefined,
+      villageText: undefined,
+    });
     expect(response.body).toEqual({
       farmerId: "33333333-3333-4333-8333-333333333333",
       phoneNumber: "0788123456",
       district: null,
+      latitude: undefined,
+      longitude: undefined,
+      sectorId: null,
+      villageText: null,
+      resolvedLatitude: null,
+      resolvedLongitude: null,
     });
+  });
+
+  it("registers a farmer via the cascading picker's sectorId + villageText", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/farmers/register")
+      .send({ phoneNumber: "0788123456", sectorId: "11111111-1111-4111-8111-111111111111", villageText: "  Kabuga  " })
+      .expect(201);
+
+    expect(farmersService.registerOrFind).toHaveBeenCalledWith(
+      expect.objectContaining({ sectorId: "11111111-1111-4111-8111-111111111111", villageText: "Kabuga" }),
+    );
+    expect(response.body.phoneNumber).toBe("0788123456");
+  });
+
+  it("rejects a malformed sectorId", async () => {
+    await request(app.getHttpServer())
+      .post("/farmers/register")
+      .send({ phoneNumber: "0788123456", sectorId: "not-a-uuid" })
+      .expect(400);
+
+    expect(farmersService.registerOrFind).not.toHaveBeenCalled();
   });
 
   it("rejects when phoneNumber is missing", async () => {

@@ -11,7 +11,7 @@ import { CropStage } from "../crops/entities/crop-stage.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { KnowledgeFact } from "../knowledge/entities/knowledge-fact.entity";
 import { GroqService } from "../ai/groq.service";
-import { ChatLanguage, ConversationTurn, CropStageInfo } from "../ai/types";
+import { ChatLanguage, ConversationTurn, CropStageInfo, StructuredReply } from "../ai/types";
 import { FarmersService } from "../farmers/farmers.service";
 import { Farmer } from "../farmers/entities/farmer.entity";
 import { WeatherService } from "../weather/weather.service";
@@ -19,9 +19,34 @@ import { WeatherInfo } from "../weather/weather.types";
 import { parseIsoDateStringLocal } from "../common/date.util";
 import { extractKeywords } from "./extract-keywords";
 import { ChatResponse, HandleMessageParams, HandlePhotoMessageParams } from "./chat.types";
+import { Crop } from "../crops/entities/crop.entity";
 
 const HISTORY_LIMIT = 8;
 const MAX_FACTS = 6;
+
+const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Always English regardless of conversation language — deliberately, so it's
+// an exact, reproducible string both when we generate it and when we compare
+// an incoming message against it (see resolvePendingCropConfirmation). A
+// translated chip would need translated matching too, and chip taps are
+// exact-string round-trips anyway, not something a farmer types by hand.
+const DECLINE_CHIP_TEXT = "No, that's not right";
+
+function formatPlantingDateForChip(isoDate: string): string {
+  const date = parseIsoDateStringLocal(isoDate, "plantingDate");
+  return `${MONTH_ABBREVIATIONS[date.getMonth()]} ${date.getDate()}`;
+}
+
+/** Shared by both the proposal (this is the chip text shown) and the confirmation check (the incoming message must match exactly) — one function, so the two can never drift apart. */
+function buildConfirmChipText(cropName: string, plantingDate: string): string {
+  return `Yes, track ${cropName} (planted ${formatPlantingDateForChip(plantingDate)})`;
+}
+
+interface PendingCropProposal {
+  cropSlug: string;
+  cropName: string;
+  plantingDate: string;
+}
 
 interface TurnContext {
   conversation: Conversation;
@@ -47,6 +72,19 @@ export class ChatOrchestratorService {
   ) {}
 
   async handleMessage(params: HandleMessageParams): Promise<ChatResponse> {
+    // A pending crop-tracking proposal from the PREVIOUS turn takes priority
+    // over the normal flow: this message either confirms it (exact chip-text
+    // match) or doesn't (decline chip, or literally anything else the farmer
+    // sent instead) — either way it's resolved here, never left dangling into
+    // a third turn, and a confirm short-circuits the rest of this method
+    // entirely (no fresh Groq call needed for a deterministic "yes").
+    if (params.conversationId) {
+      const confirmationResponse = await this.resolvePendingCropConfirmation(params.conversationId, params.message);
+      if (confirmationResponse) {
+        return confirmationResponse;
+      }
+    }
+
     const { conversation, season, cropStage, weather } = await this.prepareTurnContext({
       conversationId: params.conversationId,
       farmerId: params.farmerId,
@@ -83,7 +121,9 @@ export class ChatOrchestratorService {
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
 
-    return this.toChatResponse(conversation, season, cropStage, structuredReply);
+    const pendingProposal = await this.maybeProposeCropTracking(conversation, structuredReply);
+
+    return this.toChatResponse(conversation, season, cropStage, structuredReply, pendingProposal);
   }
 
   /**
@@ -124,7 +164,9 @@ export class ChatOrchestratorService {
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
 
-    return this.toChatResponse(conversation, season, cropStage, structuredReply);
+    const pendingProposal = await this.maybeProposeCropTracking(conversation, structuredReply);
+
+    return this.toChatResponse(conversation, season, cropStage, structuredReply, pendingProposal);
   }
 
   private async prepareTurnContext(input: {
@@ -166,15 +208,139 @@ export class ChatOrchestratorService {
     season: SeasonInfo,
     cropStage: CropStage | undefined,
     structuredReply: { replyText: string; suggestedChips: string[] },
+    pendingProposal?: PendingCropProposal | null,
   ): ChatResponse {
+    // A freshly-proposed crop replaces this turn's own suggested chips with
+    // the confirm/deny pair — confirming (or declining) the crop is the one
+    // thing that actually matters next, so it shouldn't compete for attention
+    // alongside Groq's own follow-up suggestions.
+    const suggestedChips = pendingProposal
+      ? [buildConfirmChipText(pendingProposal.cropName, pendingProposal.plantingDate), DECLINE_CHIP_TEXT]
+      : structuredReply.suggestedChips;
+
     return {
       conversationId: conversation.id,
       replyText: structuredReply.replyText,
-      suggestedChips: structuredReply.suggestedChips,
+      suggestedChips,
       language: conversation.language ?? "en",
       season,
       cropStage: cropStage ? this.toCropStageInfo(cropStage) : undefined,
+      pendingCropConfirmation: pendingProposal ?? undefined,
     };
+  }
+
+  /**
+   * Checks whether Groq just confidently extracted a crop+planting date this
+   * turn and, if so, stages it as a PENDING proposal (Conversation.pendingCropSlug/
+   * pendingPlantingDate) rather than writing cropId/plantingDate directly —
+   * the farmer has to actually confirm before anything real gets tracked.
+   * Never re-triggers for a farmer who already has a tracked crop, so this
+   * only ever fires once per conversation.
+   */
+  private async maybeProposeCropTracking(
+    conversation: Conversation,
+    structuredReply: StructuredReply,
+  ): Promise<PendingCropProposal | null> {
+    if (conversation.cropId || conversation.cropTrackingDeclined) {
+      return null;
+    }
+    if (!structuredReply.extractedCropSlug || !structuredReply.extractedPlantingDate) {
+      return null;
+    }
+
+    let crop: Crop;
+    try {
+      crop = await this.cropsService.getCropBySlug(structuredReply.extractedCropSlug);
+    } catch (error) {
+      // Shouldn't happen — GroqService already whitelists against the known
+      // seeded slugs — but a missing crop row is defensively treated as "no
+      // proposal" rather than letting an error bubble out of a chat reply.
+      this.logger.warn(`Extracted crop slug "${structuredReply.extractedCropSlug}" did not resolve to a real crop: ${(error as Error).message}`);
+      return null;
+    }
+
+    conversation.pendingCropSlug = structuredReply.extractedCropSlug;
+    conversation.pendingPlantingDate = structuredReply.extractedPlantingDate;
+    await this.conversationRepository.save(conversation);
+
+    return {
+      cropSlug: structuredReply.extractedCropSlug,
+      cropName: crop.name,
+      plantingDate: structuredReply.extractedPlantingDate,
+    };
+  }
+
+  /**
+   * Returns a ChatResponse if `message` resolves a pending crop-tracking
+   * proposal (confirmed or declined/ignored), or null if there was no
+   * pending proposal at all — in which case the caller should proceed with
+   * the normal Groq-backed flow for this message. Either way a pending
+   * proposal is cleared as a side effect here, so it never lingers into a
+   * third turn.
+   */
+  private async resolvePendingCropConfirmation(conversationId: string, message: string): Promise<ChatResponse | null> {
+    const conversation = await this.conversationRepository.findOne({ where: { id: conversationId } });
+    if (!conversation?.pendingCropSlug || !conversation.pendingPlantingDate) {
+      return null;
+    }
+
+    const pendingSlug = conversation.pendingCropSlug;
+    const pendingDate = conversation.pendingPlantingDate;
+
+    let crop: Crop;
+    try {
+      crop = await this.cropsService.getCropBySlug(pendingSlug);
+    } catch (error) {
+      this.logger.warn(`Pending crop slug "${pendingSlug}" no longer resolves: ${(error as Error).message}`);
+      conversation.pendingCropSlug = null;
+      conversation.pendingPlantingDate = null;
+      await this.conversationRepository.save(conversation);
+      return null;
+    }
+
+    const isConfirmed = message.trim() === buildConfirmChipText(crop.name, pendingDate);
+
+    // Resolved either way — confirmed or not — so it's never asked again.
+    conversation.pendingCropSlug = null;
+    conversation.pendingPlantingDate = null;
+
+    if (!isConfirmed) {
+      // Without this flag, Groq's very next (normal fallback) reply would
+      // often re-extract the exact same crop+date from the farmer's own
+      // recent message and immediately re-propose it — reading as the bot
+      // ignoring the farmer's "no" a moment ago. Declining suppresses
+      // auto-proposals for the rest of this conversation; the manual
+      // fallback form is unaffected.
+      conversation.cropTrackingDeclined = true;
+      await this.conversationRepository.save(conversation);
+      return null;
+    }
+
+    conversation.cropId = crop.id;
+    conversation.plantingDate = pendingDate;
+    const savedConversation = await this.conversationRepository.save(conversation);
+
+    await this.messageRepository.save(
+      this.messageRepository.create({ conversationId: savedConversation.id, role: "user", type: "text", text: message }),
+    );
+
+    const season = this.seasonService.getCurrentSeason();
+    const cropStage = await this.resolveCropStage(savedConversation);
+    const replyText = this.buildTrackingConfirmedReplyText(crop, pendingDate, savedConversation.language ?? "en");
+
+    await this.persistBotReply(savedConversation.id, replyText);
+
+    return this.toChatResponse(savedConversation, season, cropStage, { replyText, suggestedChips: [] });
+  }
+
+  private buildTrackingConfirmedReplyText(crop: Crop, plantingDate: string, language: ChatLanguage): string {
+    const formatted = formatPlantingDateForChip(plantingDate);
+    const templates: Record<ChatLanguage, string> = {
+      en: `Got it — I'll track your ${crop.name.toLowerCase()} planted on ${formatted}.`,
+      rw: `Byakiriwe — nzakurikirana ${crop.localName} yatewe kuwa ${formatted}.`,
+      fr: `C'est noté — je vais suivre votre ${crop.name.toLowerCase()} planté le ${formatted}.`,
+    };
+    return templates[language] ?? templates.en;
   }
 
   private async loadOrCreateConversation(conversationId?: string): Promise<Conversation> {

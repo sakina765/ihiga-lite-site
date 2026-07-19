@@ -19,6 +19,7 @@ interface OpenMeteoDailyResponse {
     time: string[];
     precipitation_probability_max: number[];
     precipitation_sum: number[];
+    temperature_2m_max: number[];
   };
 }
 
@@ -71,7 +72,7 @@ export class WeatherService {
     const url = new URL(OPEN_METEO_URL);
     url.searchParams.set("latitude", String(lat));
     url.searchParams.set("longitude", String(lon));
-    url.searchParams.set("daily", "precipitation_probability_max,precipitation_sum");
+    url.searchParams.set("daily", "precipitation_probability_max,precipitation_sum,temperature_2m_max");
     url.searchParams.set("timezone", "Africa/Kigali");
     url.searchParams.set("forecast_days", "5");
 
@@ -94,6 +95,7 @@ export class WeatherService {
 
     const info: WeatherInfo = {
       district: displayLabel,
+      todayTemperatureC: Math.round(body.daily.temperature_2m_max[0]),
       todayRainfallProbability: today.rainfallProbability,
       todayRainfallMm: today.rainfallMm,
       soilWorkable: !heavyRain,

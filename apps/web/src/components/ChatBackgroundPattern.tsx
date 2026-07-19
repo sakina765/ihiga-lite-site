@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useId } from "react";
 import { LINE_ICONS } from "./icons/lineIcons";
 
 // Tile size + scatter layout chosen once, offline (see the placements list
@@ -7,7 +7,6 @@ import { LINE_ICONS } from "./icons/lineIcons";
 // would also mean the "static texture" re-computes on every re-render instead
 // of being truly constant.
 const TILE_SIZE = 700;
-const PATTERN_ID = "chat-bg-icon-pattern";
 
 // Hand-tuned once (jittered-grid scatter, not a literal random() call) —
 // sized against a real WhatsApp wallpaper screenshot for reference (icons
@@ -110,10 +109,20 @@ const STROKE_WIDTH = 2.0;
 const PATTERN_OPACITY = 0.08;
 
 function ChatBackgroundPatternImpl() {
+  // Unique per mounted instance. This component is now reused in more than
+  // one place on the same page at once (main chat + sidebar) — a hardcoded
+  // id here would mean multiple <pattern id="..."> elements sharing one id,
+  // which is invalid HTML. fill="url(#id)" resolves document-wide, not
+  // scoped to the local <svg>, so with a shared id only ONE instance would
+  // actually paint and the rest would silently render nothing. useId() is
+  // also SSR/hydration-safe (deterministic per render tree position), same
+  // as the no-Math.random() reasoning above.
+  const patternId = useId();
+
   return (
     <svg aria-hidden="true" focusable="false" className="pointer-events-none absolute inset-0 h-full w-full">
       <defs>
-        <pattern id={PATTERN_ID} patternUnits="userSpaceOnUse" width={TILE_SIZE} height={TILE_SIZE}>
+        <pattern id={patternId} patternUnits="userSpaceOnUse" width={TILE_SIZE} height={TILE_SIZE}>
           <g fill="none" stroke="#2C3A26" strokeLinecap="round" strokeLinejoin="round" opacity={PATTERN_OPACITY}>
             {PLACEMENTS.map((p, i) => (
               <g
@@ -127,7 +136,7 @@ function ChatBackgroundPatternImpl() {
           </g>
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill={`url(#${PATTERN_ID})`} />
+      <rect width="100%" height="100%" fill={`url(#${patternId})`} />
     </svg>
   );
 }

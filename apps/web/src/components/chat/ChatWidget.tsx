@@ -60,6 +60,12 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingKind, setLoadingKind] = useState<LoadingKind>(null);
   const [isSlow, setIsSlow] = useState(false);
+  // Bumped after every successful chat response (text/voice/photo) so the
+  // sidebar's "Your crop"/"Today's summary" cards refetch and reflect a crop
+  // the chat confirm flow just wrote — without this, confirming "Yes, track
+  // maize..." would leave the sidebar showing its stale empty state until a
+  // full page reload.
+  const [cropRefreshSignal, setCropRefreshSignal] = useState(0);
 
   // With Groq this threshold rarely fires for text in practice — real calls measured
   // consistently under ~1s (vs. Gemini, which ranged from ~2s up to ~98s under heavy
@@ -97,6 +103,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
         { id: makeId(), role: "bot", text: response.replyText, chips: response.suggestedChips, timestamp: Date.now() },
       ]);
       lastFailedActionRef.current = null;
+      setCropRefreshSignal((n) => n + 1);
     } catch {
       lastFailedActionRef.current = () => submitMessage(text);
       setMessages((prev) => [
@@ -127,6 +134,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
         { id: makeId(), role: "bot", text: response.replyText, chips: response.suggestedChips, timestamp: Date.now() },
       ]);
       lastFailedActionRef.current = null;
+      setCropRefreshSignal((n) => n + 1);
     } catch {
       lastFailedActionRef.current = () => submitVoiceMessage(audioBlob);
       setMessages((prev) => [
@@ -156,6 +164,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
         { id: makeId(), role: "bot", text: response.replyText, chips: response.suggestedChips, timestamp: Date.now() },
       ]);
       lastFailedActionRef.current = null;
+      setCropRefreshSignal((n) => n + 1);
     } catch {
       URL.revokeObjectURL(imageUrl);
       lastFailedActionRef.current = () => submitPhotoMessage(imageFile);
@@ -199,7 +208,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
           chain has a properly bounded height — omit min-h-0 and the chat
           pane grows past the viewport instead of scrolling internally. */}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <ChatSidebar farmerId={farmerId} />
+        <ChatSidebar farmerId={farmerId} cropRefreshSignal={cropRefreshSignal} />
         <div className="flex min-h-0 flex-1 flex-col">
           <MessageList
             messages={messages}

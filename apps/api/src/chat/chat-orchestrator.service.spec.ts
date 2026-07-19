@@ -52,6 +52,13 @@ describe("ChatOrchestratorService", () => {
         detectedTopics: ["pest"],
       })),
     };
+    cropsService.getCropBySlug = jest.fn(async (slug: string) => ({
+      id: `${slug}-id`,
+      slug,
+      name: slug === "maize" ? "Maize" : "Beans",
+      localName: slug === "maize" ? "Ibigori" : "Ibishyimbo",
+      stages: [],
+    }));
     farmersService = { getById: jest.fn(async () => ({ id: FARMER_ID, district: null, preferredLanguage: null })) };
     weatherService = { getForecast: jest.fn() };
 
@@ -267,6 +274,196 @@ describe("ChatOrchestratorService", () => {
 
       expect(result.conversationId).toBe("conv-1");
       expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ weather: undefined }));
+    });
+  });
+
+  describe("crop auto-extraction propose/confirm/decline flow (Phase 8.2)", () => {
+    it("proposes tracking (via confirm/deny chips) when Groq extracts a crop+date and no crop is tracked yet, without writing cropId/plantingDate", async () => {
+      groqService.generateReply.mockResolvedValueOnce({
+        replyText: "Got it, maize planted March 1st!",
+        suggestedChips: ["Tell me more"],
+        detectedTopics: [],
+        extractedCropSlug: "maize",
+        extractedPlantingDate: "2026-03-01",
+      });
+
+      const result = await service.handleMessage({
+        farmerId: FARMER_ID,
+        message: "I planted maize on March 1st, how's it doing?",
+      });
+
+      expect(result.pendingCropConfirmation).toEqual({
+        cropSlug: "maize",
+        cropName: "Maize",
+        plantingDate: "2026-03-01",
+      });
+      expect(result.suggestedChips).toEqual(["Yes, track Maize (planted Mar 1)", "No, that's not right"]);
+      expect(conversationRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ pendingCropSlug: "maize", pendingPlantingDate: "2026-03-01" }),
+      );
+      // Not written to the real tracked-crop fields yet — only staged as pending.
+      expect(conversationRepository.save).not.toHaveBeenCalledWith(expect.objectContaining({ cropId: "maize-id" }));
+    });
+
+    it("writes cropId/plantingDate for real when the farmer sends back the exact confirm chip text", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-03-01",
+      });
+      cropsService.getCurrentStage.mockResolvedValue({
+        id: "stage-1",
+        cropId: "maize-id",
+        name: "Germination",
+        orderIndex: 1,
+        weekStart: 0,
+        weekEnd: 2,
+        taskDescription: "Watch for even emergence.",
+        taskDescriptionRw: "Reba niba byose byamerye neza.",
+      });
+
+      const result = await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "Yes, track Maize (planted Mar 1)",
+      });
+
+      expect(conversationRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ cropId: "maize-id", plantingDate: "2026-03-01", pendingCropSlug: null, pendingPlantingDate: null }),
+      );
+      expect(result.pendingCropConfirmation).toBeUndefined();
+      expect(result.cropStage).toEqual(expect.objectContaining({ name: "Germination" }));
+      expect(result.replyText).toContain("Got it");
+      // A confirm is resolved deterministically — no fresh Groq call needed.
+      expect(groqService.generateReply).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing when the farmer declines the proposal, and proceeds with a normal reply", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-03-01",
+      });
+
+      const result = await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "No, that's not right",
+      });
+
+      expect(conversationRepository.save).not.toHaveBeenCalledWith(expect.objectContaining({ cropId: "maize-id" }));
+      expect(conversationRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ pendingCropSlug: null, pendingPlantingDate: null }),
+      );
+      // Falls through to a normal Groq-backed reply rather than getting stuck.
+      expect(groqService.generateReply).toHaveBeenCalled();
+      expect(result.pendingCropConfirmation).toBeUndefined();
+    });
+
+    it("does not immediately re-propose the same crop+date after a decline, even if Groq's next fallback reply re-extracts it", async () => {
+      // Regression: found via live manual testing — declining fell through to
+      // a normal Groq call, which (talking about the same recent message)
+      // re-extracted the identical crop+date and re-proposed it in the very
+      // same turn, reading as the bot ignoring the farmer's "no".
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-03-01",
+        cropTrackingDeclined: false,
+      });
+      groqService.generateReply.mockResolvedValueOnce({
+        replyText: "You mentioned maize planted March 1st...",
+        suggestedChips: ["Tell me more"],
+        detectedTopics: [],
+        extractedCropSlug: "maize",
+        extractedPlantingDate: "2026-03-01",
+      });
+
+      const result = await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "No, that's not right",
+      });
+
+      expect(conversationRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ cropTrackingDeclined: true }),
+      );
+      expect(result.pendingCropConfirmation).toBeUndefined();
+      expect(result.suggestedChips).toEqual(["Tell me more"]);
+    });
+
+    it("also writes nothing when the farmer sends something else entirely instead of confirming or declining", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-03-01",
+      });
+
+      await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "actually what about my beans",
+      });
+
+      expect(conversationRepository.save).not.toHaveBeenCalledWith(expect.objectContaining({ cropId: "maize-id" }));
+      expect(groqService.generateReply).toHaveBeenCalled();
+    });
+
+    it("does not re-propose crop tracking for a farmer who already has a tracked crop, even if Groq extracts a (different) crop+date in passing", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: "existing-crop-id",
+        plantingDate: "2026-01-01",
+        pendingCropSlug: null,
+        pendingPlantingDate: null,
+      });
+      cropsService.getCurrentStage.mockResolvedValue({
+        id: "stage-1",
+        cropId: "existing-crop-id",
+        name: "Vegetative growth",
+        orderIndex: 4,
+        weekStart: 6,
+        weekEnd: 8,
+        taskDescription: "Top-dress with nitrogen.",
+        taskDescriptionRw: "Ongeraho ifumbire.",
+      });
+      groqService.generateReply.mockResolvedValueOnce({
+        replyText: "Sounds like your beans are off to a good start too!",
+        suggestedChips: ["Tell me more"],
+        detectedTopics: [],
+        extractedCropSlug: "beans",
+        extractedPlantingDate: "2026-04-01",
+      });
+
+      const result = await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "oh by the way I also planted beans on April 1st",
+      });
+
+      expect(result.pendingCropConfirmation).toBeUndefined();
+      expect(result.suggestedChips).toEqual(["Tell me more"]);
+      expect(conversationRepository.save).not.toHaveBeenCalledWith(
+        expect.objectContaining({ pendingCropSlug: "beans" }),
+      );
     });
   });
 

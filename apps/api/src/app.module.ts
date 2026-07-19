@@ -15,6 +15,7 @@ import { LanguageModule } from "./language/language.module";
 import { ChatModule } from "./chat/chat.module";
 import { FarmersModule } from "./farmers/farmers.module";
 import { WeatherModule } from "./weather/weather.module";
+import { LocationModule } from "./location/location.module";
 import { DebugModule } from "./debug/debug.module";
 import { AppThrottlerGuard } from "./common/app-throttler.guard";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
@@ -52,6 +53,7 @@ const isProduction = process.env.NODE_ENV === "production";
     ChatModule,
     FarmersModule,
     WeatherModule,
+    LocationModule,
     ...(isProduction ? [] : [DebugModule]),
   ],
   providers: [

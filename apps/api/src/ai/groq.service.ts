@@ -31,6 +31,18 @@ const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 // will reference these ceilings.
 const GROQ_REQUEST_TIMEOUT_MS = 60_000;
 
+// Must stay in sync with the seeded crops in crops.seed-data.ts — these are
+// the only slugs a farmer can actually be tracked against today. Extraction
+// output outside this list is discarded (see parseStructuredReply) rather
+// than trusted, since a slug the DB doesn't recognize can't resolve to a
+// real Crop row anyway.
+const KNOWN_CROP_SLUGS = ["maize", "beans", "irish-potato"] as const;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const EXTRACTION_JSON_SHAPE_FIELDS =
+  `"extractedCropSlug": string | null (one of "maize", "beans", "irish-potato" — ONLY when the farmer clearly and specifically names one of these AND gives a specific planting date/timeframe in this message; null otherwise, never guess), ` +
+  `"extractedPlantingDate": string | null (YYYY-MM-DD, resolved from today's date if the farmer gave a relative timeframe like "3 weeks ago" — only non-null together with extractedCropSlug)`;
+
 const SYSTEM_PROMPT = `You are Ihiga Lite, an agricultural advisory assistant for smallholder farmers in Rwanda.
 
 Rules you MUST follow on every reply:
@@ -39,8 +51,9 @@ Rules you MUST follow on every reply:
 3. Always reply in the language given by "language" in CONTEXT: "en" = English, "rw" = Kinyarwanda, "fr" = French.
 4. Keep replies concise and practical — this is delivered over SMS/low-bandwidth chat, not a long essay. A few short sentences is usually enough.
 5. If CONTEXT says no crop/planting date has been given yet, ask a brief clarifying question (e.g. which crop they planted, and when) using the season context to make it concrete, rather than giving generic advice.
-6. Respond with ONLY a single valid JSON object matching this exact shape — no markdown code fences, no text outside the JSON:
-{"replyText": string (in the farmer's language), "suggestedChips": string[] (2-4 short follow-up action strings, in the farmer's language), "detectedTopics": string[] (short English topic keywords like "pest", "fertilizer", "irrigation", "harvest")}`;
+6. If the farmer clearly and specifically states BOTH a recognizable crop (maize, beans, or Irish potato) AND a specific planting date or timeframe in THIS message (e.g. "I planted maize on March 1st", "my beans went in 3 weeks ago") — not a vague mention like "my crops are struggling" — populate extractedCropSlug/extractedPlantingDate below. If either is vague, missing, or not one of those three crops, set BOTH to null. A wrong extraction is worse than none, so prefer null whenever you're not confident.
+7. Respond with ONLY a single valid JSON object matching this exact shape — no markdown code fences, no text outside the JSON:
+{"replyText": string (in the farmer's language), "suggestedChips": string[] (2-4 short follow-up action strings, in the farmer's language), "detectedTopics": string[] (short English topic keywords like "pest", "fertilizer", "irrigation", "harvest"), ${EXTRACTION_JSON_SHAPE_FIELDS}}`;
 
 // Vision gets its own, stricter system prompt: visual diagnosis of pests/disease
 // from a single photo is inherently less reliable than the grounded text RAG
@@ -55,8 +68,9 @@ Rules you MUST follow on every reply:
 3. Use the CONTEXT block (current season, the farmer's crop stage if known, knowledge facts, and today's weather) to inform your answer where visually relevant — e.g. if the farmer's crop and a matching pest/disease fact are both in CONTEXT and the photo is visually consistent with it, you may reference it. Do not invent facts beyond CONTEXT and what you can see.
 4. Always reply in the language given by "language" in CONTEXT: "en" = English, "rw" = Kinyarwanda, "fr" = French.
 5. Keep replies concise and practical — a few short sentences is usually enough.
-6. Respond with ONLY a single valid JSON object matching this exact shape — no markdown code fences, no text outside the JSON:
-{"replyText": string (in the farmer's language), "suggestedChips": string[] (2-4 short follow-up action strings, in the farmer's language), "detectedTopics": string[] (short English topic keywords like "pest", "disease", "nutrient deficiency")}`;
+6. If the farmer's caption clearly and specifically states BOTH a recognizable crop (maize, beans, or Irish potato) AND a specific planting date or timeframe — populate extractedCropSlug/extractedPlantingDate below; otherwise set both to null. A wrong extraction is worse than none.
+7. Respond with ONLY a single valid JSON object matching this exact shape — no markdown code fences, no text outside the JSON:
+{"replyText": string (in the farmer's language), "suggestedChips": string[] (2-4 short follow-up action strings, in the farmer's language), "detectedTopics": string[] (short English topic keywords like "pest", "disease", "nutrient deficiency"), ${EXTRACTION_JSON_SHAPE_FIELDS}}`;
 
 const FALLBACK_MESSAGES: Record<ChatLanguage, string> = {
   en: "Sorry, I'm having trouble answering right now. Please try again in a moment.",
@@ -193,6 +207,10 @@ export class GroqService {
   }): string[] {
     const lines: string[] = [];
     lines.push(`language: ${params.language}`);
+    // Lets the model resolve a relative timeframe ("3 weeks ago", "last month")
+    // into an absolute YYYY-MM-DD for extractedPlantingDate, rather than
+    // guessing what "today" is.
+    lines.push(`today: ${new Date().toISOString().slice(0, 10)}`);
     lines.push(
       `current_season: ${params.season.code} — ${params.season.englishName} (${params.season.localName}), ` +
         `${params.season.startDate.toDateString()} to ${params.season.endDate.toDateString()}`,
@@ -262,6 +280,17 @@ export class GroqService {
       if (typeof parsed.replyText !== "string") {
         throw new Error("response JSON is missing a string replyText field");
       }
+
+      // Only trust a crop slug that's actually one of the seeded ones, and
+      // only trust either extraction field when BOTH are present and valid —
+      // a crop without a date (or vice versa) isn't actionable, so treat a
+      // partial extraction the same as no extraction at all.
+      const rawCropSlug = typeof parsed.extractedCropSlug === "string" ? parsed.extractedCropSlug : null;
+      const rawPlantingDate = typeof parsed.extractedPlantingDate === "string" ? parsed.extractedPlantingDate : null;
+      const cropSlugValid = rawCropSlug !== null && (KNOWN_CROP_SLUGS as readonly string[]).includes(rawCropSlug);
+      const plantingDateValid = rawPlantingDate !== null && ISO_DATE_RE.test(rawPlantingDate);
+      const extractionComplete = cropSlugValid && plantingDateValid;
+
       return {
         replyText: parsed.replyText,
         suggestedChips: Array.isArray(parsed.suggestedChips)
@@ -270,6 +299,8 @@ export class GroqService {
         detectedTopics: Array.isArray(parsed.detectedTopics)
           ? parsed.detectedTopics.filter((topic: unknown): topic is string => typeof topic === "string")
           : [],
+        extractedCropSlug: extractionComplete ? rawCropSlug : null,
+        extractedPlantingDate: extractionComplete ? rawPlantingDate : null,
       };
     } catch (error) {
       this.logger.warn(`could not parse Groq JSON response — ${(error as Error).message}`);
@@ -282,6 +313,8 @@ export class GroqService {
       replyText: FALLBACK_MESSAGES[language] ?? FALLBACK_MESSAGES.en,
       suggestedChips: [],
       detectedTopics: [],
+      extractedCropSlug: null,
+      extractedPlantingDate: null,
     };
   }
 }
