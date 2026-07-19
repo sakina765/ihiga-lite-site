@@ -116,7 +116,7 @@ export function HomePage() {
             <div aria-hidden="true">
               <MarqueeAnimation
                 direction="left"
-                baseVelocity={-0.5}
+                baseVelocity={-0.2}
                 className="bg-sage-dark py-2 text-2xl font-bold uppercase text-parchment sm:text-3xl lg:text-5xl"
               >
                 {problemText}
