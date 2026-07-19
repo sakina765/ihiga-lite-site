@@ -1,10 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Farmer } from "./entities/farmer.entity";
 import { normalizePhoneNumber } from "./phone-number.util";
 import { SectorsService } from "../location/sectors.service";
 import { GeocodingService } from "../location/geocoding.service";
+import { ChatLanguage } from "../ai/types";
 
 export interface RegisterOrFindParams {
   phoneNumber: string;
@@ -14,6 +15,8 @@ export interface RegisterOrFindParams {
   /** Sector chosen via the cascading location picker (manually or GPS-auto-filled-then-reviewed). */
   sectorId?: string;
   villageText?: string;
+  /** UI language chosen at onboarding (Phase 9). */
+  preferredLanguage?: ChatLanguage;
 }
 
 interface ResolvedSectorFields {
@@ -61,6 +64,13 @@ export class FarmersService {
         existing.farmLongitude = params.longitude;
         changed = true;
       }
+      // Same backfill-only pattern — a returning farmer who already set a
+      // preference keeps it; changing it later goes through
+      // updatePreferredLanguage() (the persistent switcher), not re-registration.
+      if (params.preferredLanguage && !existing.preferredLanguage) {
+        existing.preferredLanguage = params.preferredLanguage;
+        changed = true;
+      }
       return changed ? this.farmerRepository.save(existing) : existing;
     }
 
@@ -75,7 +85,7 @@ export class FarmersService {
       district: resolved?.district ?? params.district ?? null,
       farmLatitude: params.latitude ?? null,
       farmLongitude: params.longitude ?? null,
-      preferredLanguage: null,
+      preferredLanguage: params.preferredLanguage ?? null,
       lastNotifiedStageId: null,
       lastNotifiedWeatherAlertDate: null,
       sectorId: resolved?.sectorId ?? null,
@@ -111,6 +121,16 @@ export class FarmersService {
 
   getById(id: string): Promise<Farmer | null> {
     return this.farmerRepository.findOne({ where: { id } });
+  }
+
+  /** Explicit update path for the persistent language switcher — unlike registration's backfill-only pattern, this always overwrites, since the farmer is deliberately changing their preference right now. */
+  async updatePreferredLanguage(id: string, preferredLanguage: ChatLanguage): Promise<Farmer> {
+    const farmer = await this.farmerRepository.findOne({ where: { id } });
+    if (!farmer) {
+      throw new NotFoundException(`No farmer found with id "${id}"`);
+    }
+    farmer.preferredLanguage = preferredLanguage;
+    return this.farmerRepository.save(farmer);
   }
 
   getAll(): Promise<Farmer[]> {

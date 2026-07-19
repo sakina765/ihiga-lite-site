@@ -17,6 +17,6 @@ import { FarmersModule } from "../farmers/farmers.module";
   imports: [TypeOrmModule.forFeature([Crop, CropStage, Conversation]), SeasonModule, FarmersModule],
   providers: [CropsService, CropSuggestionsService, CurrentCropService],
   controllers: [CropsController],
-  exports: [CropsService],
+  exports: [CropsService, CropSuggestionsService],
 })
 export class CropsModule {}

@@ -2,6 +2,7 @@ import type { TodayWeatherResponse } from "@ihiga-lite/shared";
 import { WeatherIcon } from "./WeatherIcon";
 import { StatusPill } from "./StatusPill";
 import { EmptyStatePrompt } from "./EmptyStatePrompt";
+import { useLanguage } from "../../../i18n/LanguageProvider";
 
 export function TodayWeatherCard({
   data,
@@ -12,18 +13,20 @@ export function TodayWeatherCard({
   loading: boolean;
   error: boolean;
 }) {
+  const { t } = useLanguage();
+
   if (loading) {
-    return <p className="text-xs text-ink-faint">Loading weather…</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.todayWeather.loading")}</p>;
   }
   if (error) {
-    return <p className="text-xs text-ink-faint">Weather unavailable right now.</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.todayWeather.unavailable")}</p>;
   }
   if (!data?.district) {
-    return <EmptyStatePrompt icon="☀️" label="Add your district to see local weather here." />;
+    return <EmptyStatePrompt icon="☀️" label={t("sidebar.todayWeather.empty")} />;
   }
 
   const weather = data.farmExact ?? data.district;
-  const label = data.farmExact ? "Your farm" : data.district.district;
+  const label = data.farmExact ? t("sidebar.todayWeather.yourFarm") : data.district.district;
 
   return (
     <div className="space-y-2 text-sm">
@@ -33,11 +36,14 @@ export function TodayWeatherCard({
           <WeatherIcon weather={weather} size={32} />
           <div>
             <p className="text-xl font-semibold leading-none text-ink">{weather.todayTemperatureC}°C</p>
-            <p className="mt-1 text-xs text-ink-soft">{weather.todayRainfallProbability}% Rain</p>
+            <p className="mt-1 text-xs text-ink-soft">
+              {weather.todayRainfallProbability}
+              {t("sidebar.todayWeather.rainSuffix")}
+            </p>
           </div>
         </div>
         <StatusPill tone={weather.soilWorkable ? "good" : "risk"}>
-          {weather.soilWorkable ? "Good day to work the soil." : weather.soilWorkableReason}
+          {weather.soilWorkable ? t("sidebar.todayWeather.goodDaySoil") : weather.soilWorkableReason}
         </StatusPill>
       </div>
     </div>

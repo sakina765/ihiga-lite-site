@@ -68,6 +68,54 @@ describe("FarmersService", () => {
     expect(farmer.district).toBe("Musanze");
   });
 
+  describe("preferredLanguage (Phase 9)", () => {
+    it("sets preferredLanguage on a newly created farmer", async () => {
+      farmerRepository.findOne.mockResolvedValue(null);
+
+      const farmer = await service.registerOrFind({ phoneNumber: "0788123456", preferredLanguage: "rw" });
+
+      expect(farmerRepository.create).toHaveBeenCalledWith(expect.objectContaining({ preferredLanguage: "rw" }));
+      expect(farmer.preferredLanguage).toBe("rw");
+    });
+
+    it("backfills preferredLanguage on an existing farmer who didn't have one yet", async () => {
+      const existing = { id: "existing-id", phoneNumber: "+250788123456", district: "Musanze", preferredLanguage: null };
+      farmerRepository.findOne.mockResolvedValue(existing);
+
+      const farmer = await service.registerOrFind({ phoneNumber: "0788123456", preferredLanguage: "fr" });
+
+      expect(farmer.preferredLanguage).toBe("fr");
+      expect(farmerRepository.save).toHaveBeenCalledWith(expect.objectContaining({ preferredLanguage: "fr" }));
+    });
+
+    it("does not overwrite an existing farmer's preferredLanguage on re-registration", async () => {
+      const existing = { id: "existing-id", phoneNumber: "+250788123456", district: "Musanze", preferredLanguage: "rw" };
+      farmerRepository.findOne.mockResolvedValue(existing);
+
+      const farmer = await service.registerOrFind({ phoneNumber: "0788123456", preferredLanguage: "en" });
+
+      expect(farmer.preferredLanguage).toBe("rw");
+    });
+
+    it("updatePreferredLanguage always overwrites, unlike registration's backfill-only behavior", async () => {
+      const existing = { id: "existing-id", phoneNumber: "+250788123456", preferredLanguage: "rw" };
+      farmerRepository.findOne.mockResolvedValue(existing);
+
+      const farmer = await service.updatePreferredLanguage("existing-id", "fr");
+
+      expect(farmer.preferredLanguage).toBe("fr");
+      expect(farmerRepository.save).toHaveBeenCalledWith(expect.objectContaining({ preferredLanguage: "fr" }));
+    });
+
+    it("updatePreferredLanguage throws when the farmer doesn't exist", async () => {
+      farmerRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.updatePreferredLanguage("missing-id", "en")).rejects.toThrow(
+        'No farmer found with id "missing-id"',
+      );
+    });
+  });
+
   describe("sector/village resolution", () => {
     it("resolves to the geocoded village coordinate when a confident match is found", async () => {
       farmerRepository.findOne.mockResolvedValue(null);

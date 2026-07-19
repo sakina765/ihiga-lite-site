@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatLanguage, SeasonInfo } from "@ihiga-lite/shared";
+import type { SeasonInfo } from "@ihiga-lite/shared";
 import { sendChatMessage, sendPhotoMessage, sendVoiceMessage } from "../../lib/chat-api";
 import { ChatHeader } from "./ChatHeader";
 import { SeasonStrip } from "./SeasonStrip";
@@ -10,6 +10,7 @@ import { ChipRow } from "./ChipRow";
 import { InputBar } from "./InputBar";
 import { ChatSidebar } from "./sidebar/ChatSidebar";
 import type { DisplayMessage } from "./types";
+import { useLanguage } from "../../i18n/LanguageProvider";
 
 function makeId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -17,29 +18,26 @@ function makeId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-const WELCOME_MESSAGE: DisplayMessage = {
-  id: "welcome",
-  role: "bot",
-  text: "Muraho! I'm Ihiga — ask me about your crops and I'll help using what's known about the current season and your crop's stage.",
-  timestamp: 0,
-};
-
 type LoadingKind = "text" | "voice" | "photo" | null;
 
-function getLoadingCopy(kind: LoadingKind, isSlow: boolean): { label?: string; srLabel: string } {
+function getLoadingCopy(
+  t: (key: string) => string,
+  kind: LoadingKind,
+  isSlow: boolean,
+): { label?: string; srLabel: string } {
   if (kind === "voice") {
     return isSlow
-      ? { label: "Still working on it…", srLabel: "Ihiga is still working on your voice message…" }
-      : { label: "Transcribing your voice message…", srLabel: "Ihiga is transcribing your voice message…" };
+      ? { label: t("chat.widget.loading.voiceSlow"), srLabel: t("chat.widget.loading.voiceSlowSr") }
+      : { label: t("chat.widget.loading.voiceFast"), srLabel: t("chat.widget.loading.voiceFastSr") };
   }
   if (kind === "photo") {
     return isSlow
-      ? { label: "Still analyzing…", srLabel: "Ihiga is still analyzing your photo…" }
-      : { label: "Looking at your photo…", srLabel: "Ihiga is looking at your photo…" };
+      ? { label: t("chat.widget.loading.photoSlow"), srLabel: t("chat.widget.loading.photoSlowSr") }
+      : { label: t("chat.widget.loading.photoFast"), srLabel: t("chat.widget.loading.photoFastSr") };
   }
   return isSlow
-    ? { label: "Still thinking…", srLabel: "Ihiga is still thinking…" }
-    : { label: undefined, srLabel: "Ihiga is typing…" };
+    ? { label: t("chat.widget.loading.textSlow"), srLabel: t("chat.widget.loading.textSlowSr") }
+    : { label: undefined, srLabel: t("chat.widget.loading.textFastSr") };
 }
 
 export function ChatWidget({ farmerId }: { farmerId: string }) {
@@ -53,10 +51,12 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
   // cleared on success. Generalizes retry across text/voice/photo without needing
   // to remember which flavor of message failed.
   const lastFailedActionRef = useRef<(() => void) | null>(null);
+  const { t } = useLanguage();
 
-  const [messages, setMessages] = useState<DisplayMessage[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<DisplayMessage[]>(() => [
+    { id: "welcome", role: "bot", text: t("chat.widget.welcome"), timestamp: 0 },
+  ]);
   const [season, setSeason] = useState<SeasonInfo | null>(null);
-  const [language, setLanguage] = useState<ChatLanguage | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingKind, setLoadingKind] = useState<LoadingKind>(null);
   const [isSlow, setIsSlow] = useState(false);
@@ -85,7 +85,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
 
   const lastMessage = messages[messages.length - 1];
   const latestChips = !isLoading && lastMessage?.role === "bot" ? (lastMessage.chips ?? []) : [];
-  const { label: loadingLabel, srLabel: loadingSrLabel } = getLoadingCopy(loadingKind, isSlow);
+  const { label: loadingLabel, srLabel: loadingSrLabel } = getLoadingCopy(t, loadingKind, isSlow);
 
   const submitMessage = useCallback(async (text: string) => {
     setLoadingKind("text");
@@ -97,7 +97,6 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
 
       conversationIdRef.current = response.conversationId;
       setSeason(response.season);
-      setLanguage(response.language);
       setMessages((prev) => [
         ...prev,
         { id: makeId(), role: "bot", text: response.replyText, chips: response.suggestedChips, timestamp: Date.now() },
@@ -108,13 +107,13 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
       lastFailedActionRef.current = () => submitMessage(text);
       setMessages((prev) => [
         ...prev,
-        { id: makeId(), role: "error", text: "Something went wrong — try again.", timestamp: Date.now() },
+        { id: makeId(), role: "error", text: t("chat.widget.error.generic"), timestamp: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
       setLoadingKind(null);
     }
-  }, [farmerId]);
+  }, [farmerId, t]);
 
   const submitVoiceMessage = useCallback(async (audioBlob: Blob) => {
     setLoadingKind("voice");
@@ -125,7 +124,6 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
 
       conversationIdRef.current = response.conversationId;
       setSeason(response.season);
-      setLanguage(response.language);
       // The user bubble only appears once we know what Whisper actually heard —
       // never optimistically, since we have no confirmed text before this point.
       setMessages((prev) => [
@@ -139,13 +137,13 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
       lastFailedActionRef.current = () => submitVoiceMessage(audioBlob);
       setMessages((prev) => [
         ...prev,
-        { id: makeId(), role: "error", text: "Couldn't process that voice message — try again.", timestamp: Date.now() },
+        { id: makeId(), role: "error", text: t("chat.widget.error.voice"), timestamp: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
       setLoadingKind(null);
     }
-  }, [farmerId]);
+  }, [farmerId, t]);
 
   const submitPhotoMessage = useCallback(async (imageFile: File) => {
     setLoadingKind("photo");
@@ -157,7 +155,6 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
 
       conversationIdRef.current = response.conversationId;
       setSeason(response.season);
-      setLanguage(response.language);
       setMessages((prev) => [
         ...prev,
         { id: makeId(), role: "user", text: "", inputType: "photo", imageUrl, timestamp: Date.now() },
@@ -170,13 +167,13 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
       lastFailedActionRef.current = () => submitPhotoMessage(imageFile);
       setMessages((prev) => [
         ...prev,
-        { id: makeId(), role: "error", text: "Couldn't process that photo — try again.", timestamp: Date.now() },
+        { id: makeId(), role: "error", text: t("chat.widget.error.photo"), timestamp: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
       setLoadingKind(null);
     }
-  }, [farmerId]);
+  }, [farmerId, t]);
 
   const handleRetry = useCallback(() => {
     const retry = lastFailedActionRef.current;
@@ -196,7 +193,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
     // comfortable max-width, so text/controls don't stretch uncomfortably
     // wide on an ultrawide monitor while the screen still reads as fully used.
     <div className="flex h-dvh flex-col bg-parchment">
-      <ChatHeader language={language} />
+      <ChatHeader />
       <SeasonStrip season={season} />
       {/* The sidebar lives INSIDE the chat body, below the header/season
           strip — not as a page-level sibling spanning the full viewport

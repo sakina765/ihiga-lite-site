@@ -8,10 +8,6 @@ import { GroqService } from "../ai/groq.service";
 
 const FIXTURES_DIR = path.join(__dirname, "..", "..", "test", "fixtures");
 
-// Real UUIDs (not "farmer-1"-style placeholders) since farmerId/conversationId
-// now go through the same @IsUUID() DTO validation the real app enforces —
-// including the version/variant nibbles (the "4" and "8" below), which a
-// naive placeholder like "11111111-1111-1111-1111-111111111111" fails.
 const FARMER_ID = "11111111-1111-4111-8111-111111111111";
 const CONVERSATION_ID = "22222222-2222-4222-8222-222222222222";
 

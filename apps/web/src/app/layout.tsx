@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { IntroGate } from "../components/IntroGate";
+import { LanguageProvider } from "../i18n/LanguageProvider";
 
 export const metadata: Metadata = {
   title: "Ihiga Lite",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <IntroGate>{children}</IntroGate>
+        <LanguageProvider>
+          <IntroGate>{children}</IntroGate>
+        </LanguageProvider>
       </body>
     </html>
   );

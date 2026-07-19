@@ -56,8 +56,16 @@ const FRENCH_MARKERS = [
 
 const FRENCH_ACCENT_PATTERN = /[éèêàçôûùâîœ]/i;
 
+// Word-boundary matching, not raw substring — a naive text.includes() means
+// short markers like "est"/"et" match inside completely ordinary English
+// words ("best", "harvest", "get", "sweet"), which was previously flipping
+// English conversations to French mid-chat on words that merely contain the
+// marker as a substring, not a real word of their own.
 function countMatches(text: string, markers: string[]): number {
-  return markers.reduce((count, marker) => (text.includes(marker) ? count + 1 : count), 0);
+  return markers.reduce((count, marker) => {
+    const pattern = new RegExp(`\\b${marker}\\b`, "i");
+    return pattern.test(text) ? count + 1 : count;
+  }, 0);
 }
 
 @Injectable()

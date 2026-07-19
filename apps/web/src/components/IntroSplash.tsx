@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import logo from "../app/Ihiga3d.png";
 import { TriangleDotStrip } from "./intro/TriangleDotPattern";
+import { IntroLoadingIndicator } from "./intro/IntroLoadingIndicator";
 import { usePrefersReducedMotion } from "./intro/usePrefersReducedMotion";
+import { useLanguage } from "../i18n/LanguageProvider";
 
 const AUTO_ADVANCE_MS = 3000;
 // Avoids an accidental tap in the first instant (before anything's even
@@ -18,6 +20,7 @@ const EXIT_ZOOM_SCALE = 1.2;
 
 export function IntroSplash({ onComplete }: { onComplete: () => void }) {
   const prefersReducedMotion = usePrefersReducedMotion();
+  const { t } = useLanguage();
   const [canSkip, setCanSkip] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const hasExitedRef = useRef(false);
@@ -60,7 +63,7 @@ export function IntroSplash({ onComplete }: { onComplete: () => void }) {
       className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-soil outline-none"
       role="button"
       tabIndex={0}
-      aria-label="Skip intro animation"
+      aria-label={t("intro.skipAria")}
       onClick={handleSkip}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -93,7 +96,7 @@ export function IntroSplash({ onComplete }: { onComplete: () => void }) {
               the image, rows 730-798 of 798px) and render our own tagline
               text below instead, in a color we control. */}
           <div className="aspect-[765/730] w-48 overflow-hidden sm:w-64">
-            <Image src={logo} alt="Ihiga Lite" priority className="h-full w-full object-cover object-top select-none" />
+            <Image src={logo} alt={t("intro.logoAlt")} priority className="h-full w-full object-cover object-top select-none" />
           </div>
         </motion.div>
 
@@ -103,8 +106,17 @@ export function IntroSplash({ onComplete }: { onComplete: () => void }) {
           transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
           className="text-center text-sm text-parchment sm:text-base"
         >
-          AI Insights for Better Farming
+          {t("intro.tagline")}
         </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.5, ease: "easeOut" }}
+          className="mt-2"
+        >
+          <IntroLoadingIndicator reduceMotion={prefersReducedMotion} />
+        </motion.div>
       </div>
 
       <TriangleDotStrip reduceMotion={prefersReducedMotion} />

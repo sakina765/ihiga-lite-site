@@ -1,5 +1,8 @@
+import { useLanguage } from "../../i18n/LanguageProvider";
+
 export function RecordingIndicator({ elapsedMs, onStop }: { elapsedMs: number; onStop: () => void }) {
   const seconds = Math.floor(elapsedMs / 1000);
+  const { t } = useLanguage();
 
   return (
     <div className="border-t border-parchment-2 bg-white px-3 py-2">
@@ -7,7 +10,7 @@ export function RecordingIndicator({ elapsedMs, onStop }: { elapsedMs: number; o
         <button
           type="button"
           onClick={onStop}
-          aria-label="Stop recording"
+          aria-label={t("chat.recording.stopAria")}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-clay text-white transition-colors hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-dark"
         >
           ⏹
@@ -17,7 +20,7 @@ export function RecordingIndicator({ elapsedMs, onStop }: { elapsedMs: number; o
             className="h-2.5 w-2.5 rounded-full bg-clay motion-safe:animate-pulse motion-reduce:animate-none"
             aria-hidden="true"
           />
-          Recording… {seconds}s
+          {t("chat.recording.label", { seconds })}
         </span>
       </div>
     </div>

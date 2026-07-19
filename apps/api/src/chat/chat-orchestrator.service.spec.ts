@@ -19,6 +19,7 @@ describe("ChatOrchestratorService", () => {
   let languageService: any;
   let seasonService: any;
   let cropsService: any;
+  let cropSuggestionsService: any;
   let knowledgeService: any;
   let groqService: any;
   let farmersService: any;
@@ -61,6 +62,7 @@ describe("ChatOrchestratorService", () => {
     }));
     farmersService = { getById: jest.fn(async () => ({ id: FARMER_ID, district: null, preferredLanguage: null })) };
     weatherService = { getForecast: jest.fn() };
+    cropSuggestionsService = { getSuggestions: jest.fn(() => ({ season: makeSeason(), province: null, crops: [] })) };
 
     service = new ChatOrchestratorService(
       conversationRepository,
@@ -68,6 +70,7 @@ describe("ChatOrchestratorService", () => {
       languageService,
       seasonService,
       cropsService,
+      cropSuggestionsService,
       knowledgeService,
       groqService,
       farmersService,
@@ -87,6 +90,38 @@ describe("ChatOrchestratorService", () => {
       expect.objectContaining({ cropStage: undefined, language: "en" }),
     );
     expect(messageRepository.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("carries a farmer's already-tracked crop forward into a brand-new conversation (no conversationId)", async () => {
+    // Regression: the frontend never persists conversationId across page
+    // loads, so every fresh visit used to land on a blank conversation even
+    // when the "Your crop" sidebar (backed by the same underlying data) knew
+    // the farmer already had a tracked crop from an earlier conversation.
+    conversationRepository.findOne.mockResolvedValue({
+      id: "prior-conv",
+      language: "en",
+      farmerId: FARMER_ID,
+      cropId: "maize-id",
+      plantingDate: "2026-05-01",
+    });
+    cropsService.getCurrentStage.mockResolvedValue({
+      id: "stage-1",
+      cropId: "maize-id",
+      name: "Vegetative growth",
+      orderIndex: 4,
+      weekStart: 6,
+      weekEnd: 8,
+      taskDescription: "Top-dress with nitrogen.",
+      taskDescriptionRw: "Ongeraho ifumbire.",
+    });
+
+    const result = await service.handleMessage({ farmerId: FARMER_ID, message: "hey whats crops is mine" });
+
+    expect(cropsService.getCurrentStage).toHaveBeenCalledWith("maize-id", expect.any(Date));
+    expect(result.cropStage).toEqual(expect.objectContaining({ name: "Vegetative growth" }));
+    expect(groqService.generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({ cropStage: expect.objectContaining({ name: "Vegetative growth" }) }),
+    );
   });
 
   it("sets farmerId on the conversation", async () => {
@@ -221,6 +256,35 @@ describe("ChatOrchestratorService", () => {
     });
 
     expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "en" }));
+  });
+
+  describe("Phase 9: Farmer.preferredLanguage as the authoritative language baseline", () => {
+    it("uses Farmer.preferredLanguage over LanguageService.detect() when the farmer sends an English message", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: "rw" });
+      languageService.detect.mockReturnValue("en");
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "hello, how is my crop doing" });
+
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "rw" }));
+    });
+
+    it("still lets a per-message explicit language override win over Farmer.preferredLanguage", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: "rw" });
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "switch to french please", language: "fr" });
+
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "fr" }));
+    });
+
+    it("falls back to LanguageService.detect() when the farmer has no preferredLanguage set", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: null });
+      languageService.detect.mockReturnValue("fr");
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "Bonjour, comment ça va?" });
+
+      expect(languageService.detect).toHaveBeenCalledWith("Bonjour, comment ça va?");
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ language: "fr" }));
+    });
   });
 
   it("persists both the user message and the bot reply, in order", async () => {

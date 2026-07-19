@@ -26,4 +26,16 @@ describe("LanguageService", () => {
   it("detects a bare crop name in French, e.g. 'Riz'", () => {
     expect(service.detect("Riz")).toBe("fr");
   });
+
+  it("does not mistake 'best' for the French marker 'est'", () => {
+    expect(service.detect("What is the best season of coffee?")).toBe("en");
+  });
+
+  it("does not mistake 'harvest' for the French marker 'est'", () => {
+    expect(service.detect("Give the best months to harvest the coffee")).toBe("en");
+  });
+
+  it("does not mistake 'get'/'yet' for the French marker 'et'", () => {
+    expect(service.detect("Not yet, I'll get to it when I plant")).toBe("en");
+  });
 });

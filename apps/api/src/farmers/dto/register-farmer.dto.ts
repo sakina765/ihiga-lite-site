@@ -1,4 +1,5 @@
-import { IsLatitude, IsLongitude, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
+import { IsIn, IsLatitude, IsLongitude, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
+import { ChatLanguage } from "../../ai/types";
 
 export class RegisterFarmerDto {
   // Exact format (0788123456 / +250788123456 / etc.) is enforced by
@@ -33,4 +34,9 @@ export class RegisterFarmerDto {
   @IsString()
   @MaxLength(200)
   villageText?: string;
+
+  /** UI language chosen at onboarding (Phase 9) — becomes the authoritative override for Groq's replies too. */
+  @IsOptional()
+  @IsIn(["en", "rw", "fr"])
+  preferredLanguage?: ChatLanguage;
 }

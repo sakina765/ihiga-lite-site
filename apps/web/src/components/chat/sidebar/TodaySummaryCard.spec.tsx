@@ -1,6 +1,23 @@
 import { render, screen } from "@testing-library/react";
 import type { CurrentCropResponse, WeatherInfo } from "@ihiga-lite/shared";
+import en from "../../../i18n/dictionaries/en.json";
+import { LanguageProvider } from "../../../i18n/LanguageProvider";
 import { buildSummaryLines, TodaySummaryCard } from "./TodaySummaryCard";
+
+const dict: Record<string, string> = en;
+
+/** Mirrors LanguageProvider's real interpolation — kept local so this test stays a pure-function test, not coupled to the provider. */
+function t(key: string, vars?: Record<string, string | number>): string {
+  const template = dict[key];
+  if (!vars) {
+    return template;
+  }
+  return template.replace(/\{(\w+)\}/g, (match, k: string) => (k in vars ? String(vars[k]) : match));
+}
+
+function renderWithLanguage(ui: React.ReactElement) {
+  return render(<LanguageProvider>{ui}</LanguageProvider>);
+}
 
 const weather: WeatherInfo = {
   district: "Musanze",
@@ -27,34 +44,34 @@ const crop: CurrentCropResponse = {
 
 describe("buildSummaryLines", () => {
   it("combines both lines when weather and crop are both present", () => {
-    const { weatherLine, cropLine } = buildSummaryLines(weather, crop);
+    const { weatherLine, cropLine } = buildSummaryLines(weather, crop, t);
 
     expect(weatherLine).toBe("33% chance of rain — good day to work the soil.");
     expect(cropLine).toBe("Your maize is in the tasseling stage — prioritize irrigation this week");
   });
 
   it("uses the soil-risk reason when soil isn't workable", () => {
-    const { weatherLine } = buildSummaryLines(heavyRainWeather, null);
+    const { weatherLine } = buildSummaryLines(heavyRainWeather, null, t);
 
     expect(weatherLine).toBe("33% chance of rain — Heavy rain expected today — wait before working the soil.");
   });
 
   it("shows only the weather half, with a calm crop prompt, when no crop is tracked", () => {
-    const { weatherLine, cropLine } = buildSummaryLines(weather, null);
+    const { weatherLine, cropLine } = buildSummaryLines(weather, null, t);
 
     expect(weatherLine).toBe("33% chance of rain — good day to work the soil.");
     expect(cropLine).toBe("Tell Ihiga your crop and planting date in chat to see this week's task here.");
   });
 
   it("does not crash when crop is present but weather is not (shouldn't really happen)", () => {
-    const { weatherLine, cropLine } = buildSummaryLines(null, crop);
+    const { weatherLine, cropLine } = buildSummaryLines(null, crop, t);
 
     expect(weatherLine).toBeNull();
     expect(cropLine).toContain("maize");
   });
 
   it("degrades sensibly when neither weather nor crop is available", () => {
-    const { weatherLine, cropLine } = buildSummaryLines(null, null);
+    const { weatherLine, cropLine } = buildSummaryLines(null, null, t);
 
     expect(weatherLine).toBeNull();
     expect(cropLine).toBe("Tell Ihiga your crop and planting date in chat to see this week's task here.");
@@ -63,20 +80,20 @@ describe("buildSummaryLines", () => {
 
 describe("TodaySummaryCard", () => {
   it("renders a loading state while either weather or crop is still loading", () => {
-    render(<TodaySummaryCard weatherData={null} weatherLoading={true} weatherError={false} cropData={null} cropLoading={false} />);
+    renderWithLanguage(<TodaySummaryCard weatherData={null} weatherLoading={true} weatherError={false} cropData={null} cropLoading={false} />);
 
     expect(screen.getByText(/loading today's summary/i)).toBeInTheDocument();
   });
 
   it("renders both headline lines once loaded", () => {
-    render(<TodaySummaryCard weatherData={weather} weatherLoading={false} weatherError={false} cropData={crop} cropLoading={false} />);
+    renderWithLanguage(<TodaySummaryCard weatherData={weather} weatherLoading={false} weatherError={false} cropData={crop} cropLoading={false} />);
 
     expect(screen.getByText(/33% chance of rain/i)).toBeInTheDocument();
     expect(screen.getByText(/tasseling stage/i)).toBeInTheDocument();
   });
 
   it("shows an unavailable message (not the no-district prompt) when the weather request errored", () => {
-    render(<TodaySummaryCard weatherData={null} weatherLoading={false} weatherError={true} cropData={null} cropLoading={false} />);
+    renderWithLanguage(<TodaySummaryCard weatherData={null} weatherLoading={false} weatherError={true} cropData={null} cropLoading={false} />);
 
     expect(screen.getByText(/weather unavailable right now/i)).toBeInTheDocument();
   });

@@ -1,5 +1,6 @@
 import type { CropSuggestionsResponse } from "@ihiga-lite/shared";
 import { EmptyStatePrompt } from "./EmptyStatePrompt";
+import { useLanguage } from "../../../i18n/LanguageProvider";
 
 export function CropSuggestionsCard({
   data,
@@ -10,14 +11,16 @@ export function CropSuggestionsCard({
   loading: boolean;
   error: boolean;
 }) {
+  const { t } = useLanguage();
+
   if (loading) {
-    return <p className="text-xs text-ink-faint">Loading crop suggestions…</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.cropSuggestions.loading")}</p>;
   }
   if (error || !data) {
-    return <p className="text-xs text-ink-faint">Crop suggestions unavailable right now.</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.cropSuggestions.unavailable")}</p>;
   }
   if (data.crops.length === 0) {
-    return <EmptyStatePrompt icon="🌱" label="Add your district to see suggestions" />;
+    return <EmptyStatePrompt icon="🌱" label={t("sidebar.cropSuggestions.empty")} />;
   }
 
   return (

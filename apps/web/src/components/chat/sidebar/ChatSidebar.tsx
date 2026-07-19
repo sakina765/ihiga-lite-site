@@ -10,6 +10,7 @@ import { CropSuggestionsCard } from "./CropSuggestionsCard";
 import { YourCropCard } from "./YourCropCard";
 import { AlertsStrip } from "./AlertsStrip";
 import { ChatBackgroundPattern } from "../../ChatBackgroundPattern";
+import { useLanguage } from "../../../i18n/LanguageProvider";
 
 /**
  * Auto-populated "farm info" sidebar for /chat — takes only farmerId, fetches
@@ -19,6 +20,7 @@ import { ChatBackgroundPattern } from "../../ChatBackgroundPattern";
  */
 export function ChatSidebar({ farmerId, cropRefreshSignal = 0 }: { farmerId: string; cropRefreshSignal?: number }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { t } = useLanguage();
   const { todayWeather, provinceWeather, cropSuggestions, currentCrop, refreshCurrentCrop } = useSidebarData(
     farmerId,
     cropRefreshSignal,
@@ -39,10 +41,10 @@ export function ChatSidebar({ farmerId, cropRefreshSignal = 0 }: { farmerId: str
         cropData={currentCrop.data}
         cropLoading={currentCrop.loading}
       />
-      <CollapsibleSection title="Today's weather" storageKey="ihiga_sidebar_weather_open" risk={weatherRisk}>
+      <CollapsibleSection title={t("sidebar.section.todayWeather")} storageKey="ihiga_sidebar_weather_open" risk={weatherRisk}>
         <TodayWeatherCard data={todayWeather.data} loading={todayWeather.loading} error={todayWeather.error} />
       </CollapsibleSection>
-      <CollapsibleSection title="Regional weather" defaultOpen={false} storageKey="ihiga_sidebar_regional_open" headerIcon="🌧️">
+      <CollapsibleSection title={t("sidebar.section.regionalWeather")} defaultOpen={false} storageKey="ihiga_sidebar_regional_open" headerIcon="🌧️">
         <ProvinceWeatherAccordion
           data={provinceWeather.data}
           loading={provinceWeather.loading}
@@ -51,10 +53,10 @@ export function ChatSidebar({ farmerId, cropRefreshSignal = 0 }: { farmerId: str
           farmExact={todayWeather.data?.farmExact}
         />
       </CollapsibleSection>
-      <CollapsibleSection title="Crop suggestions" storageKey="ihiga_sidebar_suggestions_open">
+      <CollapsibleSection title={t("sidebar.section.cropSuggestions")} storageKey="ihiga_sidebar_suggestions_open">
         <CropSuggestionsCard data={cropSuggestions.data} loading={cropSuggestions.loading} error={cropSuggestions.error} />
       </CollapsibleSection>
-      <CollapsibleSection title="Your crop" defaultOpen={false} storageKey="ihiga_sidebar_crop_open">
+      <CollapsibleSection title={t("sidebar.section.yourCrop")} defaultOpen={false} storageKey="ihiga_sidebar_crop_open">
         <YourCropCard
           data={currentCrop.data}
           loading={currentCrop.loading}
@@ -83,7 +85,7 @@ export function ChatSidebar({ farmerId, cropRefreshSignal = 0 }: { farmerId: str
             aria-expanded={mobileOpen}
             className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-ink"
           >
-            Farm info
+            {t("sidebar.farmInfo")}
             <span aria-hidden="true">{mobileOpen ? "▲" : "▼"}</span>
           </button>
           {mobileOpen && (

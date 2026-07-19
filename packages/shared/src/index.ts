@@ -43,6 +43,8 @@ export interface RegisterFarmerRequest {
   sectorId?: string;
   /** Optional free-text village/cell, geocoded server-side via GeocodingService on registration. */
   villageText?: string;
+  /** UI language chosen at onboarding (Phase 9) — becomes the authoritative override for Groq's replies too. */
+  preferredLanguage?: ChatLanguage;
 }
 
 export interface RegisterFarmerResponse {
@@ -55,6 +57,16 @@ export interface RegisterFarmerResponse {
   villageText?: string | null;
   resolvedLatitude?: number | null;
   resolvedLongitude?: number | null;
+  preferredLanguage?: ChatLanguage | null;
+}
+
+export interface UpdatePreferredLanguageRequest {
+  preferredLanguage: ChatLanguage;
+}
+
+export interface UpdatePreferredLanguageResponse {
+  farmerId: string;
+  preferredLanguage: ChatLanguage;
 }
 
 /** A Rwandan sector (umurenge) — powers the onboarding picker's sector dropdown and the sidebar's district drill-down. */

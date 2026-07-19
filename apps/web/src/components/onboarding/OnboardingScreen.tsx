@@ -7,12 +7,15 @@ import logo from "../../app/Ihiga3d.png";
 import { registerFarmer } from "../../lib/farmers-api";
 import { getNearestSector, getSectors } from "../../lib/location-api";
 import { RWANDA_PROVINCE_DISTRICTS, districtToProvince } from "../../lib/rwanda-locations";
+import { useLanguage } from "../../i18n/LanguageProvider";
+import { LanguageSwitcher } from "../../i18n/LanguageSwitcher";
 
 const PROVINCES = Object.keys(RWANDA_PROVINCE_DISTRICTS);
 
 type LocationStatus = "idle" | "requesting" | "granted" | "denied" | "unsupported";
 
 export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: string) => void }) {
+  const { language, t } = useLanguage();
   const [phoneNumber, setPhoneNumber] = useState("");
 
   // Cascading picker state — province -> district -> sector -> optional village text.
@@ -113,7 +116,7 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!phoneNumber.trim()) {
-      setError("Please enter your phone number.");
+      setError(t("onboarding.phoneRequiredError"));
       return;
     }
     setIsSubmitting(true);
@@ -127,10 +130,11 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
         villageText: villageText.trim() || undefined,
         latitude: location?.latitude,
         longitude: location?.longitude,
+        preferredLanguage: language,
       });
       onRegistered(response.farmerId);
     } catch {
-      setError("That phone number doesn't look right — try the format 07XX XXX XXX.");
+      setError(t("onboarding.phoneInvalidError"));
     } finally {
       setIsSubmitting(false);
     }
@@ -209,20 +213,25 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
               source PNG's baked-in tagline (bottom ~8.5%) can't be recolored,
               so it's cropped off and this screen's own tagline text is used instead. */}
           <div className="mb-3 aspect-[765/730] w-16 overflow-hidden">
-            <Image src={logo} alt="Ihiga Lite" priority className="h-full w-full object-cover object-top select-none" />
+            <Image src={logo} alt={t("home.logoAlt")} priority className="h-full w-full object-cover object-top select-none" />
           </div>
-          <h1 className="text-lg font-semibold text-ink">Welcome to Ihiga</h1>
-          <p className="mt-1 text-sm text-ink-soft">Your crop advisory assistant. Let&apos;s get you set up.</p>
+          <h1 className="text-lg font-semibold text-ink">{t("onboarding.title")}</h1>
+          <p className="mt-1 text-sm text-ink-soft">{t("onboarding.subtitle")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="relative z-10 flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink">Phone number</span>
+            <span className="text-sm font-medium text-ink">{t("onboarding.languageLabel")}</span>
+            <LanguageSwitcher />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-ink">{t("onboarding.phoneLabel")}</span>
             <input
               type="tel"
               value={phoneNumber}
               onChange={(event) => setPhoneNumber(event.target.value)}
-              placeholder="e.g. 0788 123 456"
+              placeholder={t("onboarding.phonePlaceholder")}
               autoComplete="tel"
               className="rounded-xl border border-white/60 bg-white/50 px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-sage"
             />
@@ -240,29 +249,27 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
                 disabled={locationStatus === "requesting"}
                 className="rounded-xl border border-white/60 bg-white/50 px-3 py-2 text-sm font-medium text-ink-soft backdrop-blur-sm transition-colors hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {locationStatus === "requesting" ? "Getting your location…" : "Use my current GPS location"}
+                {locationStatus === "requesting" ? t("onboarding.gpsRequesting") : t("onboarding.gpsIdle")}
               </button>
               {locationStatus === "granted" && gpsAutoFilled && (
-                <span className="text-xs text-sage-dark">Location shared ✓ — auto-filled below, review before continuing.</span>
+                <span className="text-xs text-sage-dark">{t("onboarding.gpsGrantedAutoFilled")}</span>
               )}
               {locationStatus === "granted" && !gpsAutoFilled && (
-                <span className="text-xs text-ink-faint">Location shared ✓ — pick your area below to see local weather.</span>
+                <span className="text-xs text-ink-faint">{t("onboarding.gpsGrantedManual")}</span>
               )}
-              {locationStatus === "denied" && (
-                <span className="text-xs text-ink-faint">Couldn&apos;t get your location — you can pick your area below instead.</span>
-              )}
+              {locationStatus === "denied" && <span className="text-xs text-ink-faint">{t("onboarding.gpsDenied")}</span>}
             </div>
           )}
 
           <div className="flex flex-col gap-3 rounded-xl border border-white/50 bg-white/30 p-3 backdrop-blur-sm">
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-ink">Province (optional)</span>
+              <span className="text-sm font-medium text-ink">{t("onboarding.provinceLabel")}</span>
               <select
                 value={province}
                 onChange={(event) => handleProvinceChange(event.target.value)}
                 className="rounded-xl border border-white/60 bg-white/70 px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-sage"
               >
-                <option value="">Skip for now</option>
+                <option value="">{t("onboarding.skipForNow")}</option>
                 {PROVINCES.map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -273,13 +280,13 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
 
             {province && (
               <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">District</span>
+                <span className="text-sm font-medium text-ink">{t("onboarding.districtLabel")}</span>
                 <select
                   value={district}
                   onChange={(event) => handleDistrictChange(event.target.value)}
                   className="rounded-xl border border-white/60 bg-white/70 px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-sage"
                 >
-                  <option value="">Skip for now</option>
+                  <option value="">{t("onboarding.skipForNow")}</option>
                   {districtOptions.map((d) => (
                     <option key={d} value={d}>
                       {d}
@@ -291,14 +298,14 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
 
             {district && (
               <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Sector</span>
+                <span className="text-sm font-medium text-ink">{t("onboarding.sectorLabel")}</span>
                 <select
                   value={sectorId}
                   onChange={(event) => handleSectorChange(event.target.value)}
                   disabled={sectorsLoading}
                   className="rounded-xl border border-white/60 bg-white/70 px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-sage disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <option value="">{sectorsLoading ? "Loading sectors…" : "Skip for now"}</option>
+                  <option value="">{sectorsLoading ? t("onboarding.loadingSectors") : t("onboarding.skipForNow")}</option>
                   {sectors.map((sector) => (
                     <option key={sector.id} value={sector.id}>
                       {sector.name}
@@ -310,21 +317,19 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
 
             {sectorId && (
               <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Village / cell (optional)</span>
+                <span className="text-sm font-medium text-ink">{t("onboarding.villageLabel")}</span>
                 <input
                   type="text"
                   value={villageText}
                   onChange={(event) => setVillageText(event.target.value)}
-                  placeholder="e.g. Kabuga"
+                  placeholder={t("onboarding.villagePlaceholder")}
                   className="rounded-xl border border-white/60 bg-white/50 px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-sage"
                 />
-                <span className="text-xs text-ink-faint">
-                  For the most precise weather. If we can&apos;t find it, we&apos;ll use your sector&apos;s weather instead.
-                </span>
+                <span className="text-xs text-ink-faint">{t("onboarding.villageHelp")}</span>
               </label>
             )}
 
-            <span className="text-xs text-ink-faint">Used for local weather advice — you can add this later.</span>
+            <span className="text-xs text-ink-faint">{t("onboarding.locationHelp")}</span>
           </div>
 
           {error && <p className="text-sm text-clay">{error}</p>}
@@ -334,7 +339,7 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
             disabled={isSubmitting}
             className="mt-2 rounded-full bg-sage px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sage-dark disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-dark"
           >
-            {isSubmitting ? "Starting…" : "Start chatting"}
+            {isSubmitting ? t("onboarding.submitLoading") : t("onboarding.submitIdle")}
           </button>
         </form>
       </div>

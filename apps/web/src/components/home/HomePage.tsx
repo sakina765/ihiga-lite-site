@@ -8,51 +8,50 @@ import logo from "../../app/Ihiga3d.png";
 import { LineIcon, type LineIconName } from "../icons/lineIcons";
 import { usePrefersReducedMotion } from "../intro/usePrefersReducedMotion";
 import { MarqueeAnimation } from "../ui/marquee-effect";
+import { FeatureSteps } from "../ui/feature-section";
+import { TrustShowcase } from "../ui/trust-showcase";
 import { FloatingMascot } from "./FloatingMascot";
 import { ScrollReveal } from "./ScrollReveal";
+import { useLanguage } from "../../i18n/LanguageProvider";
+import { LanguageSwitcher } from "../../i18n/LanguageSwitcher";
 
 const REPO_URL = "https://github.com/sakina765/ihiga-lite-site";
 
-const PROBLEM_TEXT =
-  "💡Rwandan farmers often get generic advice that doesn't match their specific crop, its current growth stage, or today's actual weather — and when a planting window or a rain risk is real, generic isn't enough.";
-
-const FEATURES: Array<{ icon: LineIconName; title: string; description: string }> = [
-  {
-    icon: "cloudRain",
-    title: "Season & Weather-Aware",
-    description: "Advice grounded in real-time local weather and Rwanda's actual planting seasons.",
-  },
-  {
-    icon: "plantStages",
-    title: "Tracks Your Crop's Stage",
-    description: "Knows what week you're in, from planting to harvest.",
-  },
-  {
-    icon: "chatBubble",
-    title: "Speaks Your Language",
-    description: "English, Kinyarwanda, and French.",
-  },
-  {
-    icon: "microphone",
-    title: "Talk or Type",
-    description: "Voice input for hands-free questions in the field.",
-  },
-  {
-    icon: "camera",
-    title: "Snap a Photo",
-    description: "Visual guidance on what you're seeing in your crop.",
-  },
-  {
-    icon: "phone",
-    title: "Proactive Alerts",
-    description: "SMS notifications when your crop or the weather needs your attention.",
-  },
+const FEATURE_KEYS: Array<{ icon: LineIconName; key: string }> = [
+  { icon: "cloudRain", key: "weather" },
+  { icon: "plantStages", key: "stage" },
+  { icon: "chatBubble", key: "language" },
+  { icon: "microphone", key: "talk" },
+  { icon: "camera", key: "photo" },
+  { icon: "phone", key: "alerts" },
 ];
 
-const STEPS = [
-  "Tell Ihiga your crop and planting date.",
-  "Ask anything — by text, voice, or photo.",
-  "Get grounded, honest advice — Ihiga says “I don't know” rather than guessing.",
+// Placeholder photos for the "How it works" animated feature section —
+// random-but-related Unsplash stock shots, swap for real photos later.
+const HOW_IT_WORKS_KEYS = [
+  { key: "step1", image: "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?q=80&w=2070&auto=format&fit=crop" },
+  { key: "step2", image: "https://images.unsplash.com/photo-1464226184884-fa280b87c399?q=80&w=2070&auto=format&fit=crop" },
+  { key: "step3", image: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?q=80&w=2070&auto=format&fit=crop" },
+];
+
+// Placeholder photo collage for the trust section — random-but-related
+// Unsplash farm/crop shots, swap for real photos later.
+const TRUST_SHOWCASE_IMAGES = [
+  { src: "https://images.unsplash.com/photo-1590682680695-43b964a3ae17?q=80&w=300&auto=format&fit=crop", alt: "Hands planting a seedling" },
+  { src: "https://images.unsplash.com/photo-1523741543316-beb7fc7023d8?q=80&w=300&auto=format&fit=crop", alt: "Crop rows across green hills" },
+  { src: "https://images.unsplash.com/photo-1592841200221-a6898f307baa?q=80&w=300&auto=format&fit=crop", alt: "Tomatoes ripening on the vine" },
+  { src: "https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?q=80&w=300&auto=format&fit=crop", alt: "Seedlings in a tray" },
+  { src: "https://images.unsplash.com/photo-1445282768818-728615cc910a?q=80&w=300&auto=format&fit=crop", alt: "Freshly harvested carrots" },
+  { src: "https://images.unsplash.com/photo-1610348725531-843dff563e2c?q=80&w=300&auto=format&fit=crop", alt: "Assorted fresh vegetables" },
+  { src: "https://images.unsplash.com/photo-1591857177580-dc82b9ac4e1e?q=80&w=300&auto=format&fit=crop", alt: "A thriving vegetable garden bed" },
+  { src: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=300&auto=format&fit=crop", alt: "Sunrise over a wheat field" },
+  { src: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?q=80&w=300&auto=format&fit=crop", alt: "A trowel scooping soil" },
+  { src: "https://images.unsplash.com/photo-1560493676-04071c5f467b?q=80&w=300&auto=format&fit=crop", alt: "Rows of crops across a field" },
+  { src: "https://images.unsplash.com/photo-1595855759920-86582396756a?q=80&w=300&auto=format&fit=crop", alt: "Fresh asparagus" },
+  { src: "https://images.unsplash.com/photo-1500595046743-cd271d694d30?q=80&w=300&auto=format&fit=crop", alt: "Cattle grazing at sunset" },
+  { src: "https://images.unsplash.com/photo-1587049633312-d628ae50a8ae?q=80&w=300&auto=format&fit=crop", alt: "Freshly picked onions" },
+  { src: "https://images.unsplash.com/photo-1500651230702-0e2d8a49d4ad?q=80&w=300&auto=format&fit=crop", alt: "Baskets of freshly picked strawberries" },
+  { src: "https://images.unsplash.com/photo-1590682680695-43b964a3ae17?q=80&w=300&auto=format&fit=crop", alt: "Hands planting a seedling" },
 ];
 
 function FeatureCard({ icon, title, description, delay }: { icon: LineIconName; title: string; description: string; delay: number }) {
@@ -80,6 +79,8 @@ function FeatureCard({ icon, title, description, delay }: { icon: LineIconName; 
 
 export function HomePage() {
   const prefersReducedMotion = usePrefersReducedMotion();
+  const { t } = useLanguage();
+  const problemText = t("home.problem.text");
 
   return (
     <main>
@@ -89,16 +90,17 @@ export function HomePage() {
         {/* Soil-tinted overlay over the photo — keeps the brand color and text
             contrast while still letting the real photo read through. */}
         <div className="absolute inset-0 bg-soil/80" />
+        <LanguageSwitcher className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6" />
         <ScrollReveal className="relative z-10 mx-auto flex max-w-2xl flex-col items-center text-center">
           <div className="aspect-[765/730] w-40 overflow-hidden sm:w-52">
-            <Image src={logo} alt="Ihiga Lite" priority className="h-full w-full object-cover object-top select-none" />
+            <Image src={logo} alt={t("home.logoAlt")} priority className="h-full w-full object-cover object-top select-none" />
           </div>
-          <p className="mt-3 text-base text-parchment sm:text-lg">AI Insights for Better Farming</p>
+          <p className="mt-3 text-base text-parchment sm:text-lg">{t("home.hero.tagline")}</p>
           <Link
             href="/chat"
             className="mt-9 inline-flex items-center gap-2 rounded-full bg-sage px-7 py-3 text-base font-semibold text-parchment transition-colors hover:bg-sage-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf"
           >
-            Start chatting with Ihiga
+            {t("home.hero.cta")}
             <span aria-hidden="true">→</span>
           </Link>
         </ScrollReveal>
@@ -107,17 +109,17 @@ export function HomePage() {
       {/* 2. The problem */}
       <section className="overflow-hidden bg-sage-dark">
         {prefersReducedMotion ? (
-          <p className="px-6 text-center text-2xl font-bold uppercase text-parchment sm:text-3xl">{PROBLEM_TEXT}</p>
+          <p className="px-6 text-center text-2xl font-bold uppercase text-parchment sm:text-3xl">{problemText}</p>
         ) : (
           <div>
-            <p className="sr-only">{PROBLEM_TEXT}</p>
+            <p className="sr-only">{problemText}</p>
             <div aria-hidden="true">
               <MarqueeAnimation
                 direction="left"
                 baseVelocity={-0.5}
                 className="bg-sage-dark py-2 text-2xl font-bold uppercase text-parchment sm:text-3xl lg:text-5xl"
               >
-                {PROBLEM_TEXT}
+                {problemText}
               </MarqueeAnimation>
             </div>
           </div>
@@ -132,11 +134,17 @@ export function HomePage() {
           </ScrollReveal>
           <div>
             <ScrollReveal>
-              <h2 className="text-center text-2xl font-semibold text-ink sm:text-3xl lg:text-left">What Ihiga does</h2>
+              <h2 className="text-center text-4xl font-bold tracking-tight text-ink md:text-5xl lg:text-left">{t("home.features.heading")}</h2>
             </ScrollReveal>
             <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {FEATURES.map((feature, i) => (
-                <FeatureCard key={feature.title} {...feature} delay={Math.min(i, 3) * 0.08} />
+              {FEATURE_KEYS.map((feature, i) => (
+                <FeatureCard
+                  key={feature.key}
+                  icon={feature.icon}
+                  title={t(`home.features.${feature.key}.title`)}
+                  description={t(`home.features.${feature.key}.description`)}
+                  delay={Math.min(i, 3) * 0.08}
+                />
               ))}
             </div>
           </div>
@@ -144,37 +152,41 @@ export function HomePage() {
       </section>
 
       {/* 4. How it works */}
-      <section className="bg-parchment px-6 py-16">
-        <div className="mx-auto max-w-4xl">
-          <ScrollReveal>
-            <h2 className="text-center text-2xl font-semibold text-ink sm:text-3xl">How it works</h2>
-          </ScrollReveal>
-          <ol className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3">
-            {STEPS.map((step, i) => (
-              <ScrollReveal key={step} delay={i * 0.1} className="flex flex-col items-center text-center sm:items-start sm:text-left">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sage-dark text-base font-semibold text-parchment">
-                  {i + 1}
-                </span>
-                <p className="mt-3 text-sm text-ink-soft sm:text-base">{step}</p>
-              </ScrollReveal>
-            ))}
-          </ol>
-        </div>
+      <section className="bg-parchment-3">
+        <FeatureSteps
+          title={t("home.howItWorks.heading")}
+          autoPlayInterval={4000}
+          features={HOW_IT_WORKS_KEYS.map(({ key, image }) => ({
+            step: key,
+            title: t(`home.howItWorks.${key}Title`),
+            content: t(`home.howItWorks.${key}`),
+            image,
+          }))}
+        />
       </section>
 
-      {/* 5. Trust line */}
-      <section className="bg-soil-deep px-6 py-12">
-        <ScrollReveal className="mx-auto max-w-xl text-center">
-          <p className="text-sm text-leaf sm:text-base">
-            Ihiga&apos;s advice is grounded in validated Rwandan crop and season guidance, not general assumptions.
-          </p>
-        </ScrollReveal>
-      </section>
+      {/* 5. Trust showcase */}
+      <TrustShowcase
+        className="bg-parchment-3"
+        images={TRUST_SHOWCASE_IMAGES}
+        badgeText={t("home.trust.badge")}
+        title={
+          <>
+            {t("home.trust.titleLine1")}
+            <br />
+            {t("home.trust.titleLine2")}
+          </>
+        }
+        description={t("home.trust.text")}
+        ctaText={t("home.hero.cta")}
+        ctaHref="/chat"
+      />
 
       {/* 6. Footer */}
       <footer className="bg-soil px-6 py-10">
         <div className="mx-auto flex max-w-4xl flex-col items-center gap-4 text-center">
-          <p className="text-xs text-leaf sm:text-sm">Ihiga chats in English, Kinyarwanda (RW), and French (FR) — just start typing in whichever you prefer.</p>
+          <LanguageSwitcher />
+          <p className="text-xs text-leaf sm:text-sm">{t("home.footer.languagesLine")}</p>
           <div className="flex items-center gap-4 text-xs text-parchment/70 sm:text-sm">
             <a
               href={REPO_URL}
@@ -182,12 +194,12 @@ export function HomePage() {
               rel="noopener noreferrer"
               className="underline-offset-4 hover:text-parchment hover:underline"
             >
-              GitHub
+              {t("home.footer.github")}
             </a>
             <span aria-hidden="true">·</span>
-            <span>© 2026 Ihiga Lite</span>
+            <span>{t("home.footer.copyright")}</span>
           </div>
-          <p className="text-[11px] text-parchment/50">Built with Next.js, NestJS, and Groq.</p>
+          <p className="text-[11px] text-parchment/50">{t("home.footer.builtWith")}</p>
         </div>
       </footer>
     </main>

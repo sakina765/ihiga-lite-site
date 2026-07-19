@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { CropOption, CurrentCropResponse } from "@ihiga-lite/shared";
 import { getAllCrops, setCurrentCrop } from "../../../lib/crops-api";
 import { EmptyStatePrompt } from "./EmptyStatePrompt";
+import { useLanguage } from "../../../i18n/LanguageProvider";
 
 /**
  * Manual fallback path (Phase 8.2) — always available regardless of whether
@@ -32,6 +33,7 @@ export function YourCropCard({
   const [plantingDate, setPlantingDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (!formOpen || crops.length > 0) {
@@ -72,17 +74,17 @@ export function YourCropCard({
   }
 
   if (loading) {
-    return <p className="text-xs text-ink-faint">Loading your crop…</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.yourCrop.loading")}</p>;
   }
   if (error) {
-    return <p className="text-xs text-ink-faint">Crop status unavailable right now.</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.yourCrop.unavailable")}</p>;
   }
 
   if (formOpen) {
     return (
       <form onSubmit={handleSubmit} className="space-y-2 rounded-2xl border border-white/50 bg-white/40 p-3 shadow-sm backdrop-blur-md">
         <label className="block text-xs font-medium text-ink-soft">
-          Crop
+          {t("sidebar.yourCrop.cropLabel")}
           <select
             value={selectedCropId}
             onChange={(event) => setSelectedCropId(event.target.value)}
@@ -97,7 +99,7 @@ export function YourCropCard({
           </select>
         </label>
         <label className="block text-xs font-medium text-ink-soft">
-          Planting date
+          {t("sidebar.yourCrop.plantingDateLabel")}
           <input
             type="date"
             value={plantingDate}
@@ -106,14 +108,14 @@ export function YourCropCard({
             className="mt-1 w-full rounded-lg border border-white/60 bg-white/70 px-2 py-1.5 text-sm text-ink"
           />
         </label>
-        {submitError && <p className="text-xs text-red-600">Couldn&apos;t save that — try again.</p>}
+        {submitError && <p className="text-xs text-red-600">{t("sidebar.yourCrop.saveError")}</p>}
         <div className="flex gap-2 pt-1">
           <button
             type="submit"
             disabled={submitting || !selectedCropId || !plantingDate}
             className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-parchment disabled:opacity-50"
           >
-            {submitting ? "Saving…" : "Save"}
+            {submitting ? t("sidebar.yourCrop.saving") : t("sidebar.yourCrop.save")}
           </button>
           <button
             type="button"
@@ -121,7 +123,7 @@ export function YourCropCard({
             disabled={submitting}
             className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink-soft"
           >
-            Cancel
+            {t("sidebar.yourCrop.cancel")}
           </button>
         </div>
       </form>
@@ -131,7 +133,7 @@ export function YourCropCard({
   if (!data) {
     return (
       <button type="button" onClick={() => setFormOpen(true)} className="block w-full text-left">
-        <EmptyStatePrompt icon="📅" label="Add your planting date" />
+        <EmptyStatePrompt icon="📅" label={t("sidebar.yourCrop.addPlantingDate")} />
       </button>
     );
   }
@@ -142,11 +144,11 @@ export function YourCropCard({
         {data.cropName} <span className="text-ink-faint">({data.localName})</span>
       </p>
       <p className="text-ink-soft">
-        Stage: {data.stage.name} (week {data.stage.weekStart}–{data.stage.weekEnd})
+        {t("sidebar.yourCrop.stage", { stage: data.stage.name, start: data.stage.weekStart, end: data.stage.weekEnd })}
       </p>
       <p className="text-xs text-ink-faint">{data.stage.taskDescription}</p>
       <button type="button" onClick={() => setFormOpen(true)} className="text-xs font-medium text-ink-soft underline">
-        Update
+        {t("sidebar.yourCrop.update")}
       </button>
     </div>
   );

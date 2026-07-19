@@ -1,12 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { IsNull, Not, Repository } from "typeorm";
 import { Conversation } from "./entities/conversation.entity";
 import { Message } from "./entities/message.entity";
 import { LanguageService } from "../language/language.service";
 import { SeasonService } from "../season/season.service";
 import { SeasonInfo } from "../season/season.types";
 import { CropsService } from "../crops/crops.service";
+import { CropSuggestionsService } from "../crops/crop-suggestions.service";
 import { CropStage } from "../crops/entities/crop-stage.entity";
 import { KnowledgeService } from "../knowledge/knowledge.service";
 import { KnowledgeFact } from "../knowledge/entities/knowledge-fact.entity";
@@ -53,6 +54,7 @@ interface TurnContext {
   season: SeasonInfo;
   cropStage?: CropStage;
   weather?: WeatherInfo;
+  seasonalCrops?: string[];
 }
 
 @Injectable()
@@ -65,6 +67,7 @@ export class ChatOrchestratorService {
     private readonly languageService: LanguageService,
     private readonly seasonService: SeasonService,
     private readonly cropsService: CropsService,
+    private readonly cropSuggestionsService: CropSuggestionsService,
     private readonly knowledgeService: KnowledgeService,
     private readonly groqService: GroqService,
     private readonly farmersService: FarmersService,
@@ -85,7 +88,7 @@ export class ChatOrchestratorService {
       }
     }
 
-    const { conversation, season, cropStage, weather } = await this.prepareTurnContext({
+    const { conversation, season, cropStage, weather, seasonalCrops } = await this.prepareTurnContext({
       conversationId: params.conversationId,
       farmerId: params.farmerId,
       cropId: params.cropId,
@@ -117,6 +120,7 @@ export class ChatOrchestratorService {
       relevantFacts,
       conversationHistory,
       weather,
+      seasonalCrops,
     });
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
@@ -133,7 +137,7 @@ export class ChatOrchestratorService {
    * persistence pattern via the shared private helpers below.
    */
   async handlePhotoMessage(params: HandlePhotoMessageParams): Promise<ChatResponse> {
-    const { conversation, season, cropStage, weather } = await this.prepareTurnContext({
+    const { conversation, season, cropStage, weather, seasonalCrops } = await this.prepareTurnContext({
       conversationId: params.conversationId,
       farmerId: params.farmerId,
       cropId: params.cropId,
@@ -160,6 +164,7 @@ export class ChatOrchestratorService {
       relevantFacts,
       caption: params.caption,
       weather,
+      seasonalCrops,
     });
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
@@ -177,9 +182,10 @@ export class ChatOrchestratorService {
     language?: ChatLanguage;
     languageDetectionText: string;
   }): Promise<TurnContext> {
-    let conversation = await this.loadOrCreateConversation(input.conversationId);
+    let conversation = await this.loadOrCreateConversation(input.conversationId, input.farmerId);
+    const farmer = await this.farmersService.getById(input.farmerId);
 
-    conversation.language = this.resolveLanguage(input.language, input.languageDetectionText, conversation);
+    conversation.language = this.resolveLanguage(input.language, input.languageDetectionText, conversation, farmer);
     conversation.farmerId = input.farmerId;
     if (input.cropId) {
       conversation.cropId = input.cropId;
@@ -191,10 +197,22 @@ export class ChatOrchestratorService {
 
     const season = this.seasonService.getCurrentSeason();
     const cropStage = await this.resolveCropStage(conversation);
-    const farmer = await this.farmersService.getById(input.farmerId);
     const weather = await this.resolveWeather(farmer);
+    const seasonalCrops = this.resolveSeasonalCrops(farmer);
 
-    return { conversation, season, cropStage, weather };
+    return { conversation, season, cropStage, weather, seasonalCrops };
+  }
+
+  /** Absent when the farmer isn't found, hasn't given a district yet, or the district doesn't map to a known province. */
+  private resolveSeasonalCrops(farmer: Farmer | null): string[] | undefined {
+    if (!farmer?.district) {
+      return undefined;
+    }
+    const { crops } = this.cropSuggestionsService.getSuggestions(farmer.district);
+    if (crops.length === 0) {
+      return undefined;
+    }
+    return crops.map((c) => (c.localName ? `${c.name} (${c.localName})` : c.name));
   }
 
   private async persistBotReply(conversationId: string, replyText: string): Promise<void> {
@@ -252,10 +270,13 @@ export class ChatOrchestratorService {
     try {
       crop = await this.cropsService.getCropBySlug(structuredReply.extractedCropSlug);
     } catch (error) {
-      // Shouldn't happen — GroqService already whitelists against the known
-      // seeded slugs — but a missing crop row is defensively treated as "no
-      // proposal" rather than letting an error bubble out of a chat reply.
-      this.logger.warn(`Extracted crop slug "${structuredReply.extractedCropSlug}" did not resolve to a real crop: ${(error as Error).message}`);
+      // Expected, not exceptional: Groq can now extract any crop name the
+      // farmer types, not just the seeded ones, so a slug with no matching
+      // Crop row (or a perennial crop with no stage tracking configured) is a
+      // normal outcome — just means there's no stage-tracking proposal to
+      // make this turn, not an error. The farmer's message is still answered
+      // normally via GroqService's own (possibly general-knowledge) reply.
+      this.logger.log(`Extracted crop slug "${structuredReply.extractedCropSlug}" has no trackable crop row yet: ${(error as Error).message}`);
       return null;
     }
 
@@ -343,7 +364,7 @@ export class ChatOrchestratorService {
     return templates[language] ?? templates.en;
   }
 
-  private async loadOrCreateConversation(conversationId?: string): Promise<Conversation> {
+  private async loadOrCreateConversation(conversationId: string | undefined, farmerId: string): Promise<Conversation> {
     if (conversationId) {
       const existing = await this.conversationRepository.findOne({ where: { id: conversationId } });
       if (existing) {
@@ -351,16 +372,44 @@ export class ChatOrchestratorService {
       }
       this.logger.warn(`conversationId "${conversationId}" not found — starting a new conversation instead`);
     }
-    return this.conversationRepository.create({ language: null, farmerId: null, cropId: null, plantingDate: null });
+
+    // The frontend doesn't persist conversationId across page loads, so every
+    // fresh session lands here with no conversationId — without this lookup,
+    // a farmer who already confirmed crop tracking in an earlier conversation
+    // would appear crop-less again on their very next visit, even though the
+    // "Your crop" sidebar (CurrentCropService, same underlying query) already
+    // knows about it. Carry the farmer's most recently tracked crop forward
+    // so a brand-new conversation isn't blind to something they already told us.
+    const previouslyTracked = await this.conversationRepository.findOne({
+      where: { farmerId, cropId: Not(IsNull()), plantingDate: Not(IsNull()) },
+      order: { createdAt: "DESC" },
+    });
+
+    return this.conversationRepository.create({
+      language: null,
+      farmerId: null,
+      cropId: previouslyTracked?.cropId ?? null,
+      plantingDate: previouslyTracked?.plantingDate ?? null,
+    });
   }
 
   private resolveLanguage(
     explicitLanguage: ChatLanguage | undefined,
     detectionText: string,
     conversation: Conversation,
+    farmer: Farmer | null,
   ): ChatLanguage {
     if (explicitLanguage) {
       return explicitLanguage;
+    }
+    // Phase 9: an explicit, farmer-chosen UI language (set at onboarding or via
+    // the persistent switcher) is the authoritative baseline once it exists —
+    // it overrides per-message auto-detection entirely, so Groq's replies stay
+    // consistent with what the farmer actually picked rather than a guess that
+    // can misfire on a single ambiguous message. Detection below only ever
+    // runs for a farmer who hasn't set a preference at all.
+    if (farmer?.preferredLanguage) {
+      return farmer.preferredLanguage;
     }
     // Re-detect from THIS message every turn rather than sticking with
     // whatever the conversation's language was set to on turn one — farmers

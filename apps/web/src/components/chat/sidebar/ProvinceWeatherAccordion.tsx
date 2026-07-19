@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ProvinceWeatherRollup, SectorWeather, WeatherInfo } from "@ihiga-lite/shared";
 import { getSectorWeather } from "../../../lib/weather-api";
 import { StatusPill } from "./StatusPill";
+import { useLanguage } from "../../../i18n/LanguageProvider";
 
 interface DistrictSectorState {
   data: SectorWeather[] | null;
@@ -29,12 +30,13 @@ export function ProvinceWeatherAccordion({
   // Keyed by district — loaded lazily, only when that district is expanded,
   // never eagerly for all districts' sectors at once (416 sectors total).
   const [sectorsByDistrict, setSectorsByDistrict] = useState<Record<string, DistrictSectorState>>({});
+  const { t } = useLanguage();
 
   if (loading) {
-    return <p className="text-xs text-ink-faint">Loading regional weather…</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.regional.loading")}</p>;
   }
   if (error || !data) {
-    return <p className="text-xs text-ink-faint">Regional weather unavailable right now.</p>;
+    return <p className="text-xs text-ink-faint">{t("sidebar.regional.unavailable")}</p>;
   }
 
   function toggleDistrict(district: string) {
@@ -82,11 +84,14 @@ export function ProvinceWeatherAccordion({
                     >
                       <span className="font-medium text-ink">
                         {district}
-                        {isFarmerDistrict ? " (you)" : ""}
+                        {isFarmerDistrict ? t("sidebar.regional.youSuffix") : ""}
                       </span>
                       <span className="flex items-center gap-1.5">
                         <StatusPill tone={shown.soilWorkable ? "good" : "risk"}>
-                          {shown.todayRainfallProbability}% Rain • {shown.soilWorkable ? "Soil Workable" : "Wait on Soil"}
+                          {t("sidebar.regional.rainStatus", {
+                            pct: shown.todayRainfallProbability,
+                            status: shown.soilWorkable ? t("sidebar.regional.soilWorkable") : t("sidebar.regional.waitOnSoil"),
+                          })}
                         </StatusPill>
                         <span aria-hidden="true" className="text-ink-faint">
                           {districtOpen ? "▾" : "▸"}
@@ -95,13 +100,16 @@ export function ProvinceWeatherAccordion({
                     </button>
                     {districtOpen && (
                       <ul className="ml-1 space-y-1 border-l border-parchment-2 py-1 pl-3">
-                        {sectorState?.loading && <li className="text-xs text-ink-faint">Loading sectors…</li>}
-                        {sectorState?.error && <li className="text-xs text-ink-faint">Sector weather unavailable right now.</li>}
+                        {sectorState?.loading && <li className="text-xs text-ink-faint">{t("sidebar.regional.loadingSectors")}</li>}
+                        {sectorState?.error && <li className="text-xs text-ink-faint">{t("sidebar.regional.sectorUnavailable")}</li>}
                         {sectorState?.data?.map((sector) => (
                           <li key={sector.id} className="flex items-center justify-between gap-2 py-0.5 text-xs">
                             <span className="font-medium text-ink">{sector.name}</span>
                             <StatusPill tone={sector.weather.soilWorkable ? "good" : "risk"}>
-                              {sector.weather.todayRainfallProbability}% Rain • {sector.weather.soilWorkable ? "Soil Workable" : "Wait on Soil"}
+                              {t("sidebar.regional.rainStatus", {
+                                pct: sector.weather.todayRainfallProbability,
+                                status: sector.weather.soilWorkable ? t("sidebar.regional.soilWorkable") : t("sidebar.regional.waitOnSoil"),
+                              })}
                             </StatusPill>
                           </li>
                         ))}
