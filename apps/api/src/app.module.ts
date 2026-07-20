@@ -20,13 +20,15 @@ import { DebugModule } from "./debug/debug.module";
 import { AppThrottlerGuard } from "./common/app-throttler.guard";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 
-// DebugModule (the /debug/* controller) is excluded from the module graph
-// entirely in production — not just guarded at runtime — so its routes never
-// even get registered when NODE_ENV=production. Flagged as
-// "REMOVE OR PROTECT BEFORE PRODUCTION" since Phase 1; this is the "protect"
-// half of that choice (kept, since it's genuinely useful for local/staging
-// manual verification, per every phase's testing so far).
-const isProduction = process.env.NODE_ENV === "production";
+// DebugModule (the /debug/* controller — including a route that fires a real
+// Groq API call and one that triggers the real SMS job on demand) is only
+// ever added to the module graph when NODE_ENV is EXACTLY "development" — an
+// allowlist, not a denylist. The previous check excluded it only when
+// NODE_ENV === "production", which fails OPEN: unset, "staging", "Production"
+// (wrong case), or any other value left it mounted. Allowlisting flips that
+// to fail CLOSED — DebugModule is absent unless local development is
+// explicitly confirmed, not merely "not exactly production".
+const isDevelopment = process.env.NODE_ENV === "development";
 
 @Module({
   imports: [
@@ -54,7 +56,7 @@ const isProduction = process.env.NODE_ENV === "production";
     FarmersModule,
     WeatherModule,
     LocationModule,
-    ...(isProduction ? [] : [DebugModule]),
+    ...(isDevelopment ? [DebugModule] : []),
   ],
   providers: [
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

@@ -172,3 +172,22 @@ export interface VoiceChatMessageResponse extends ChatMessageResponse {
   /** What Whisper heard — shown as "you said: ..." once the reply is back. */
   transcribedText: string;
 }
+
+export type ChatMessageKind = "text" | "voice" | "photo";
+
+export interface ConversationMessage {
+  role: "user" | "bot";
+  type: ChatMessageKind;
+  text: string;
+  /** ISO timestamp */
+  createdAt: string;
+}
+
+/** GET /chat/:id — powers resuming a conversation after a refresh or navigating away and back. */
+export interface ConversationHistoryResponse {
+  conversationId: string;
+  language: ChatLanguage;
+  season: SeasonInfo;
+  cropStage?: CropStageInfo;
+  messages: ConversationMessage[];
+}

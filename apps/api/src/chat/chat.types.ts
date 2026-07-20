@@ -53,3 +53,19 @@ export interface VoiceChatResponse extends ChatResponse {
   /** What Whisper heard — the UI shows this as "you said: ..." once the reply is back. */
   transcribedText: string;
 }
+
+export interface ConversationMessageDto {
+  role: "user" | "bot";
+  type: MessageType;
+  text: string;
+  /** ISO timestamp */
+  createdAt: string;
+}
+
+export interface ConversationHistoryResponse {
+  conversationId: string;
+  language: ChatLanguage;
+  season: SeasonInfo;
+  cropStage?: CropStageInfo;
+  messages: ConversationMessageDto[];
+}

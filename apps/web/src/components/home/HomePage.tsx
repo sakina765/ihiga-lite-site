@@ -4,18 +4,35 @@ import Image from "next/image";
 import Link from "next/link";
 import { motion } from "motion/react";
 import heroBg from "../../app/herobg.jpg";
+import heroBg2 from "../../app/herobg2.jpg";
+import heroBg3 from "../../app/herobg3.jpg";
+import heroBg4 from "../../app/herobg4.jpg";
 import logo from "../../app/Ihiga3d.png";
+import logoIcon from "../../app/IhigaIcon.png";
 import { LineIcon, type LineIconName } from "../icons/lineIcons";
+import { SocialIcon, type SocialIconName } from "../icons/socialIcons";
 import { usePrefersReducedMotion } from "../intro/usePrefersReducedMotion";
 import { MarqueeAnimation } from "../ui/marquee-effect";
 import { FeatureSteps } from "../ui/feature-section";
 import { TrustShowcase } from "../ui/trust-showcase";
 import { FloatingMascot } from "./FloatingMascot";
+import { HeroBackgroundSlider } from "./HeroBackgroundSlider";
 import { ScrollReveal } from "./ScrollReveal";
 import { useLanguage } from "../../i18n/LanguageProvider";
 import { LanguageSwitcher } from "../../i18n/LanguageSwitcher";
 
 const REPO_URL = "https://github.com/sakina765/ihiga-lite-site";
+
+// GitHub is the only one that actually goes anywhere right now — the rest
+// are placeholders until real accounts exist, per how the trust-section
+// photos were handled too (shipped now, swapped in later).
+const SOCIAL_LINKS: Array<{ name: SocialIconName; href: string | null }> = [
+  { name: "github", href: REPO_URL },
+  { name: "instagram", href: null },
+  { name: "linkedin", href: null },
+  { name: "twitter", href: null },
+  { name: "facebook", href: null },
+];
 
 const FEATURE_KEYS: Array<{ icon: LineIconName; key: string }> = [
   { icon: "cloudRain", key: "weather" },
@@ -86,7 +103,7 @@ export function HomePage() {
     <main>
       {/* 1. Hero */}
       <section className="relative overflow-hidden px-6 py-20 sm:py-28">
-        <Image src={heroBg} alt="" fill priority sizes="100vw" className="object-cover" />
+        <HeroBackgroundSlider images={[heroBg, heroBg2, heroBg3, heroBg4]} />
         {/* Soil-tinted overlay over the photo — keeps the brand color and text
             contrast while still letting the real photo read through. */}
         <div className="absolute inset-0 bg-soil/80" />
@@ -183,23 +200,41 @@ export function HomePage() {
       />
 
       {/* 6. Footer */}
-      <footer className="bg-soil px-6 py-10">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-4 text-center">
-          <LanguageSwitcher />
-          <p className="text-xs text-leaf sm:text-sm">{t("home.footer.languagesLine")}</p>
-          <div className="flex items-center gap-4 text-xs text-parchment/70 sm:text-sm">
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline-offset-4 hover:text-parchment hover:underline"
-            >
-              {t("home.footer.github")}
-            </a>
-            <span aria-hidden="true">·</span>
-            <span>{t("home.footer.copyright")}</span>
+      <footer className="border-t border-parchment/10 bg-soil px-6 pb-10 pt-12">
+        <div className="mx-auto flex max-w-sm flex-col items-center gap-6 text-center">
+          <div className="flex items-center gap-1">
+            <div className="h-8 aspect-[662/520]">
+              <Image src={logoIcon} alt="" className="h-full w-full object-contain" />
+            </div>
+            <span className="text-lg font-bold tracking-tight text-parchment">{t("home.logoAlt")}</span>
           </div>
-          <p className="text-[11px] text-parchment/50">{t("home.footer.builtWith")}</p>
+
+          <LanguageSwitcher />
+
+          <p className="text-xs text-leaf sm:text-sm">{t("home.footer.copyright")}</p>
+
+          <div className="flex items-center gap-6">
+            {SOCIAL_LINKS.map(({ name, href }) =>
+              href ? (
+                <a
+                  key={name}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={t("home.footer.github")}
+                  className="text-parchment/70 transition-all duration-200 hover:scale-110 hover:text-parchment"
+                >
+                  <SocialIcon name={name} />
+                </a>
+              ) : (
+                // Not linked anywhere yet — real accounts don't exist yet, dimmed
+                // relative to GitHub so it doesn't read as equally interactive.
+                <span key={name} aria-hidden="true" className="text-parchment/30">
+                  <SocialIcon name={name} />
+                </span>
+              ),
+            )}
+          </div>
         </div>
       </footer>
     </main>

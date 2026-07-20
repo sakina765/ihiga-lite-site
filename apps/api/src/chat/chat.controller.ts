@@ -1,12 +1,27 @@
-import { BadGatewayException, BadRequestException, Body, Controller, Post, UploadedFile, UseInterceptors } from "@nestjs/common";
+import {
+  BadGatewayException,
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Throttle } from "@nestjs/throttler";
 import { ChatOrchestratorService } from "./chat-orchestrator.service";
 import { GroqService } from "../ai/groq.service";
-import { ChatResponse, VoiceChatResponse } from "./chat.types";
+import { ChatResponse, ConversationHistoryResponse, VoiceChatResponse } from "./chat.types";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { SendVoiceDto } from "./dto/send-voice.dto";
 import { SendPhotoDto } from "./dto/send-photo.dto";
+import { GetConversationQueryDto } from "./dto/get-conversation-query.dto";
 import { isAudioSignature, isImageSignature } from "../common/file-signature.util";
 
 // Independent of whatever limits Groq's API itself enforces — these exist so a
@@ -44,6 +59,29 @@ export class ChatController {
   @Throttle(CHAT_THROTTLE)
   async sendMessage(@Body() body: SendMessageDto): Promise<ChatResponse> {
     return this.chatOrchestratorService.handleMessage(body);
+  }
+
+  // Lets the frontend resume a conversation after a refresh or navigating
+  // away and back — otherwise there's no way to get message history back at
+  // all, since it only ever lived in this turn's response and in-memory state.
+  @Get(":id")
+  async getConversation(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query() query: GetConversationQueryDto,
+  ): Promise<ConversationHistoryResponse> {
+    return this.chatOrchestratorService.getConversationHistory(id, query.farmerId);
+  }
+
+  // The chat page's "Delete conversation" button — see
+  // ChatOrchestratorService.deleteConversationMessages for why this clears
+  // messages only, not the conversation row itself.
+  @Delete(":id")
+  @HttpCode(204)
+  async deleteConversation(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query() query: GetConversationQueryDto,
+  ): Promise<void> {
+    return this.chatOrchestratorService.deleteConversationMessages(id, query.farmerId);
   }
 
   @Post("voice")

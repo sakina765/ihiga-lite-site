@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { INestApplication, NotFoundException, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import * as path from "path";
@@ -34,13 +34,25 @@ function makeChatResponse(replyText: string) {
 // validation is actually exercised here too, not just in production.
 describe("ChatController (multipart upload plumbing)", () => {
   let app: INestApplication;
-  let chatOrchestratorService: { handleMessage: jest.Mock; handlePhotoMessage: jest.Mock };
+  let chatOrchestratorService: {
+    handleMessage: jest.Mock;
+    handlePhotoMessage: jest.Mock;
+    getConversationHistory: jest.Mock;
+    deleteConversationMessages: jest.Mock;
+  };
   let groqService: { transcribeAudio: jest.Mock };
 
   beforeEach(async () => {
     chatOrchestratorService = {
       handleMessage: jest.fn(async (params: { message: string }) => makeChatResponse(`echo: ${params.message}`)),
       handlePhotoMessage: jest.fn(async () => makeChatResponse("This could be pest damage, but I'm not fully certain.")),
+      getConversationHistory: jest.fn(async (conversationId: string, farmerId: string) => ({
+        conversationId,
+        language: "en",
+        season: makeChatResponse("").season,
+        messages: [{ role: "user", type: "text", text: "Hello", createdAt: new Date(2026, 0, 1).toISOString() }],
+      })),
+      deleteConversationMessages: jest.fn(async () => undefined),
     };
     groqService = {
       transcribeAudio: jest.fn(async () => "plant maize now"),
@@ -181,5 +193,90 @@ describe("ChatController (multipart upload plumbing)", () => {
 
   it("POST /chat/photo rejects when no file is attached", async () => {
     await request(app.getHttpServer()).post("/chat/photo").field("farmerId", FARMER_ID).expect(400);
+  });
+
+  it("GET /chat/:id returns the conversation history, scoped by farmerId query param", async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/chat/${CONVERSATION_ID}`)
+      .query({ farmerId: FARMER_ID })
+      .expect(200);
+
+    expect(chatOrchestratorService.getConversationHistory).toHaveBeenCalledWith(CONVERSATION_ID, FARMER_ID);
+    expect(response.body.conversationId).toBe(CONVERSATION_ID);
+    expect(response.body.messages).toEqual([expect.objectContaining({ role: "user", text: "Hello" })]);
+  });
+
+  it("GET /chat/:id rejects when farmerId is missing", async () => {
+    await request(app.getHttpServer()).get(`/chat/${CONVERSATION_ID}`).expect(400);
+
+    expect(chatOrchestratorService.getConversationHistory).not.toHaveBeenCalled();
+  });
+
+  it("GET /chat/:id rejects when farmerId is not a valid UUID", async () => {
+    await request(app.getHttpServer())
+      .get(`/chat/${CONVERSATION_ID}`)
+      .query({ farmerId: "not-a-uuid" })
+      .expect(400);
+
+    expect(chatOrchestratorService.getConversationHistory).not.toHaveBeenCalled();
+  });
+
+  // Regression (Phase 10a hygiene): a malformed conversationId used to reach
+  // the repository's findOne() as a raw string, which Postgres rejects with
+  // "invalid input syntax for type uuid" — an uncaught driver error that
+  // surfaced as a generic 500 instead of a clean validation failure.
+  it("GET /chat/:id rejects a malformed (non-UUID) conversationId with a clean 400, not a raw DB error", async () => {
+    await request(app.getHttpServer())
+      .get("/chat/not-a-uuid")
+      .query({ farmerId: FARMER_ID })
+      .expect(400);
+
+    expect(chatOrchestratorService.getConversationHistory).not.toHaveBeenCalled();
+  });
+
+  it("GET /chat/:id propagates a 404 when the orchestrator can't find a matching conversation", async () => {
+    chatOrchestratorService.getConversationHistory.mockRejectedValueOnce(
+      new NotFoundException(`No conversation found with id "${CONVERSATION_ID}" for this farmer`),
+    );
+
+    await request(app.getHttpServer())
+      .get(`/chat/${CONVERSATION_ID}`)
+      .query({ farmerId: FARMER_ID })
+      .expect(404);
+  });
+
+  it("DELETE /chat/:id clears the conversation's messages, scoped by farmerId query param", async () => {
+    await request(app.getHttpServer())
+      .delete(`/chat/${CONVERSATION_ID}`)
+      .query({ farmerId: FARMER_ID })
+      .expect(204);
+
+    expect(chatOrchestratorService.deleteConversationMessages).toHaveBeenCalledWith(CONVERSATION_ID, FARMER_ID);
+  });
+
+  it("DELETE /chat/:id rejects when farmerId is missing", async () => {
+    await request(app.getHttpServer()).delete(`/chat/${CONVERSATION_ID}`).expect(400);
+
+    expect(chatOrchestratorService.deleteConversationMessages).not.toHaveBeenCalled();
+  });
+
+  it("DELETE /chat/:id rejects a malformed (non-UUID) conversationId with a clean 400, not a raw DB error", async () => {
+    await request(app.getHttpServer())
+      .delete("/chat/not-a-uuid")
+      .query({ farmerId: FARMER_ID })
+      .expect(400);
+
+    expect(chatOrchestratorService.deleteConversationMessages).not.toHaveBeenCalled();
+  });
+
+  it("DELETE /chat/:id propagates a 404 when the orchestrator can't find a matching conversation", async () => {
+    chatOrchestratorService.deleteConversationMessages.mockRejectedValueOnce(
+      new NotFoundException(`No conversation found with id "${CONVERSATION_ID}" for this farmer`),
+    );
+
+    await request(app.getHttpServer())
+      .delete(`/chat/${CONVERSATION_ID}`)
+      .query({ farmerId: FARMER_ID })
+      .expect(404);
   });
 });

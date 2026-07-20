@@ -1,5 +1,6 @@
 import type { DisplayMessage } from "./types";
 import { useLanguage } from "../../i18n/LanguageProvider";
+import { truncateForDisplay } from "../../lib/utils";
 
 function formatTimestamp(ts: number): string {
   return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(ts));
@@ -12,7 +13,7 @@ export function MessageBubble({ message, onRetry }: { message: DisplayMessage; o
     return (
       <div className="flex flex-col items-start gap-1.5">
         <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-clay/40 bg-parchment px-3 py-2 text-sm text-ink">
-          {message.text}
+          {truncateForDisplay(message.text)}
         </div>
         {onRetry && (
           <button
@@ -47,7 +48,7 @@ export function MessageBubble({ message, onRetry }: { message: DisplayMessage; o
             🎙️
           </span>
         )}
-        {message.text}
+        {truncateForDisplay(message.text)}
       </div>
       {isUser && <span className="mt-1 text-[11px] text-ink-soft">{formatTimestamp(message.timestamp)}</span>}
     </div>

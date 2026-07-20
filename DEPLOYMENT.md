@@ -87,6 +87,55 @@ If Africa's Talking credentials are left blank, `SmsService.sendSms()` logs a
 masked-number skip notice and returns without sending — it never throws, so
 notifications simply won't go out rather than crashing the service.
 
+## SMS Notifications — Current Status
+
+**What works today:** The daily scheduled job (`@Cron`, in the notifications
+module) checks every farmer with an active tracked crop. For each one, it
+detects whether their crop just entered a new growth stage, or whether the
+weather forecast for their location shows a real risk (heavy rain, etc.) —
+and if either is true and hasn't already been notified, composes a short SMS
+in the farmer's preferred language and calls `SmsService.sendSms()`. This
+entire pipeline — detection, suppression of repeat alerts, message
+composition, and the actual API call — is fully built and tested.
+
+**What "Success" currently means, precisely:** The app is configured with
+Africa's Talking **sandbox** credentials. A "Success" response from the API
+(including a real cost line item in RWF) confirms the integration itself
+works correctly end-to-end — but it does **not** confirm real SMS delivery
+to a real phone. Africa's Talking's sandbox environment only reliably
+delivers to Airtel Kenya test numbers, regardless of the app's actual target
+country. In practice, this means: for a real Rwandan farmer using this app
+today, the server will log a successful send, but no SMS will actually
+arrive on their phone.
+
+**Why real Rwandan delivery isn't live:** Sending real, branded SMS in
+Rwanda (or most African markets) requires an approved Sender ID/Alphanumeric
+registration, which itself requires proof of an actual registered business:
+a Tax ID number, a Certificate of Incorporation, and an authorized
+representative's identification. This is a standard industry/regulatory
+requirement (not specific to Africa's Talking) designed to prevent anonymous
+or spam SMS senders. As a personal/portfolio project without a registered
+company, this application cannot currently be completed.
+
+**What going live would actually require (no code changes needed):**
+
+1. Registering Ihiga Lite as a real, legally registered business
+2. Submitting Africa's Talking's Sender ID application with real business
+   documents
+3. Waiting for approval (typically a few business days)
+4. Swapping `AFRICAS_TALKING_API_KEY` and `AFRICAS_TALKING_USERNAME` in
+   `.env` from sandbox values to the new live app's credentials —
+   `SmsService` already reads these from environment variables, so no code
+   changes are needed once real credentials exist
+
+**Current safe-degradation behavior:** `SmsService` gracefully logs and
+skips if credentials are missing/placeholder, and logs failures without
+crashing the batch job if a real send fails — this was built and tested in
+Phase 5 and reinforced in later hardening passes. It is safe to run this app
+indefinitely in its current sandbox state without anything breaking; the
+only consequence is that SMS alerts silently don't reach real phones while
+appearing to succeed in logs.
+
 ## 3. apps/web → Vercel
 
 This is a pnpm workspace monorepo, and `apps/web` depends on the

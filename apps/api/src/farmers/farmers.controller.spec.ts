@@ -9,7 +9,7 @@ import { AppThrottlerGuard } from "../common/app-throttler.guard";
 
 describe("FarmersController", () => {
   let app: INestApplication;
-  let farmersService: { registerOrFind: jest.Mock; updatePreferredLanguage: jest.Mock; getById: jest.Mock };
+  let farmersService: { registerOrFind: jest.Mock; updatePreferredLanguage: jest.Mock; getPreferredLanguage: jest.Mock };
 
   beforeEach(async () => {
     farmersService = {
@@ -23,8 +23,8 @@ describe("FarmersController", () => {
         resolvedLongitude: null,
         preferredLanguage: params.preferredLanguage ?? null,
       })),
-      updatePreferredLanguage: jest.fn(async (id: string, preferredLanguage: string) => ({ id, preferredLanguage })),
-      getById: jest.fn(async (id: string) => ({ id, preferredLanguage: "rw" })),
+      updatePreferredLanguage: jest.fn(async () => undefined),
+      getPreferredLanguage: jest.fn(async () => "rw"),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -126,6 +126,21 @@ describe("FarmersController", () => {
 
       expect(farmersService.updatePreferredLanguage).not.toHaveBeenCalled();
     });
+
+    // Regression (Phase 10a #11): a nonexistent farmerId used to be
+    // indistinguishable from this angle anyway (the old code threw from
+    // inside the service, but this response shape must stay identical to the
+    // success case too) — updatePreferredLanguage silently no-ops for a
+    // missing farmer, so this endpoint returns the exact same 200 shape
+    // regardless of whether the id was ever real.
+    it("returns the same 200 shape even when the farmerId doesn't exist (silent no-op, not a distinguishable error)", async () => {
+      const response = await request(app.getHttpServer())
+        .patch("/farmers/00000000-0000-4000-8000-000000000000/language")
+        .send({ preferredLanguage: "fr" })
+        .expect(200);
+
+      expect(response.body).toEqual({ farmerId: "00000000-0000-4000-8000-000000000000", preferredLanguage: "fr" });
+    });
   });
 
   describe("GET /farmers/:id/language", () => {
@@ -134,14 +149,22 @@ describe("FarmersController", () => {
         .get("/farmers/22222222-2222-4222-8222-222222222222/language")
         .expect(200);
 
-      expect(farmersService.getById).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222");
+      expect(farmersService.getPreferredLanguage).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222");
       expect(response.body).toEqual({ farmerId: "22222222-2222-4222-8222-222222222222", preferredLanguage: "rw" });
     });
 
-    it("404s when the farmer doesn't exist", async () => {
-      farmersService.getById.mockResolvedValue(null);
+    // Regression (Phase 10a #11): this used to 404 for a nonexistent farmer
+    // and 200 for a real one — a distinguishable oracle an attacker could use
+    // to enumerate which farmerIds are actually registered. Both cases must
+    // now produce the exact same response shape.
+    it("returns 200 with preferredLanguage: null for a nonexistent farmer — indistinguishable from a real farmer with no preference set, not a 404", async () => {
+      farmersService.getPreferredLanguage.mockResolvedValue(null);
 
-      await request(app.getHttpServer()).get("/farmers/22222222-2222-4222-8222-222222222222/language").expect(404);
+      const response = await request(app.getHttpServer())
+        .get("/farmers/22222222-2222-4222-8222-222222222222/language")
+        .expect(200);
+
+      expect(response.body).toEqual({ farmerId: "22222222-2222-4222-8222-222222222222", preferredLanguage: null });
     });
   });
 

@@ -2,8 +2,16 @@ import Link from "next/link";
 import robotGif from "../../app/robot.gif";
 import { useLanguage } from "../../i18n/LanguageProvider";
 import { LanguageSwitcher } from "../../i18n/LanguageSwitcher";
+import { ChatActionsMenu } from "./ChatActionsMenu";
 
-export function ChatHeader() {
+interface ChatHeaderProps {
+  actionsDisabled?: boolean;
+  isSharing?: boolean;
+  onDeleteRequest: () => void;
+  onShare: () => void;
+}
+
+export function ChatHeader({ actionsDisabled, isSharing, onDeleteRequest, onShare }: ChatHeaderProps) {
   const { t } = useLanguage();
 
   return (
@@ -39,6 +47,12 @@ export function ChatHeader() {
             farmer's chosen preference is now the authoritative language
             (see ChatOrchestratorService.resolveLanguage), not a per-message guess. */}
         <LanguageSwitcher />
+        <ChatActionsMenu
+          disabled={actionsDisabled}
+          isSharing={isSharing}
+          onDeleteRequest={onDeleteRequest}
+          onShare={onShare}
+        />
       </div>
     </header>
   );

@@ -1,4 +1,10 @@
-import type { ChatLanguage, ChatMessageRequest, ChatMessageResponse, VoiceChatMessageResponse } from "@ihiga-lite/shared";
+import type {
+  ChatLanguage,
+  ChatMessageRequest,
+  ChatMessageResponse,
+  ConversationHistoryResponse,
+  VoiceChatMessageResponse,
+} from "@ihiga-lite/shared";
 
 function getApiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -16,6 +22,33 @@ export async function sendChatMessage(body: ChatMessageRequest): Promise<ChatMes
   }
 
   return response.json();
+}
+
+/**
+ * Powers resuming a conversation after a refresh or navigating away and back
+ * to /chat — thrown NotFoundExceptions (stale/unknown conversationId, or one
+ * that belongs to a different farmerId) surface as a rejected promise so the
+ * caller can fall back to starting a fresh conversation.
+ */
+export async function getConversation(conversationId: string, farmerId: string): Promise<ConversationHistoryResponse> {
+  const response = await fetch(`${getApiUrl()}/chat/${encodeURIComponent(conversationId)}?farmerId=${encodeURIComponent(farmerId)}`);
+
+  if (!response.ok) {
+    throw new Error(`Fetching conversation history failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/** Powers the chat page's "Delete conversation" action — see the backend's deleteConversationMessages for exactly what this clears. */
+export async function deleteConversation(conversationId: string, farmerId: string): Promise<void> {
+  const response = await fetch(`${getApiUrl()}/chat/${encodeURIComponent(conversationId)}?farmerId=${encodeURIComponent(farmerId)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Deleting conversation failed with status ${response.status}`);
+  }
 }
 
 interface SendVoiceMessageParams {

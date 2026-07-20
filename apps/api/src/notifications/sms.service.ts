@@ -9,6 +9,16 @@ interface AfricasTalkingRecipient {
   messageId?: string;
 }
 
+/**
+ * Configured with Africa's Talking SANDBOX credentials — a "Success" result
+ * here confirms the integration works, NOT that a real SMS reached a real
+ * phone. The sandbox only reliably delivers to Airtel Kenya test numbers, so
+ * a real Rwandan farmer today gets a logged "success" with nothing arriving
+ * on their device. Going live needs an approved Sender ID from Africa's
+ * Talking, which requires a registered business (Tax ID, Certificate of
+ * Incorporation, rep ID) — not something this project has. See
+ * DEPLOYMENT.md's "SMS Notifications — Current Status" for the full picture.
+ */
 @Injectable()
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);

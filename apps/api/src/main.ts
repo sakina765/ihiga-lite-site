@@ -1,14 +1,26 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { ConfigService } from "@nestjs/config";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
 
   app.use(helmet());
+
+  // Render sits as exactly one reverse proxy in front of this API — trusting
+  // ONLY that one hop (not `true`, which would trust the entire chain) means
+  // Express takes the client IP Render itself observed and appended to
+  // X-Forwarded-For, while still ignoring any earlier, client-spoofable
+  // entries a malicious caller could prepend to that same header. Without
+  // this, req.ip resolves to Render's own proxy address for every request
+  // (trust proxy defaults to off), collapsing the throttler's per-IP rate
+  // limit into one shared bucket for the entire farmer population — see
+  // AppThrottlerGuard, which keys on req.ip via the inherited ThrottlerGuard.
+  app.set("trust proxy", 1);
 
   // Locked to the single configured frontend origin — never a wildcard — since
   // this API is called by one known web client, not a public third-party API.

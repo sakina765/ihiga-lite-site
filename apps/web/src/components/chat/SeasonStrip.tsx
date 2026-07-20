@@ -1,13 +1,13 @@
 import type { SeasonInfo } from "@ihiga-lite/shared";
 import { useLanguage } from "../../i18n/LanguageProvider";
 
-const SEASON_DESCRIPTOR_KEY: Record<SeasonInfo["code"], string> = {
+export const SEASON_DESCRIPTOR_KEY: Record<SeasonInfo["code"], string> = {
   A: "chat.season.descriptorA",
   B: "chat.season.descriptorB",
   C: "chat.season.descriptorC",
 };
 
-function formatMonthRange(startIso: string, endIso: string): string {
+export function formatMonthRange(startIso: string, endIso: string): string {
   const fmt = new Intl.DateTimeFormat("en", { month: "short" });
   return `${fmt.format(new Date(startIso))}–${fmt.format(new Date(endIso))}`;
 }

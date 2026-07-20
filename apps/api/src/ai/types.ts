@@ -24,6 +24,15 @@ export interface GenerateReplyParams {
   conversationHistory?: ConversationTurn[];
   weather?: WeatherInfo;
   seasonalCrops?: string[];
+  /**
+   * Distinguishes "the farmer hasn't shared a district yet" from "district is
+   * known but weather/seasonalCrops still came back empty" (transient lookup
+   * failure, or simply no seeded data for that district) — without this,
+   * both cases look identical to the model and it can't tell whether asking
+   * the farmer for their district again is useful or a repeat of a question
+   * they already answered.
+   */
+  farmerDistrictKnown?: boolean;
 }
 export interface StructuredReply {
   replyText: string;
@@ -40,4 +49,5 @@ export interface AnalyzeImageContext {
   caption?: string;
   weather?: WeatherInfo;
   seasonalCrops?: string[];
+  farmerDistrictKnown?: boolean;
 }

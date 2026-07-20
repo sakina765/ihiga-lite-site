@@ -101,18 +101,38 @@ describe("FarmersService", () => {
       const existing = { id: "existing-id", phoneNumber: "+250788123456", preferredLanguage: "rw" };
       farmerRepository.findOne.mockResolvedValue(existing);
 
-      const farmer = await service.updatePreferredLanguage("existing-id", "fr");
+      await service.updatePreferredLanguage("existing-id", "fr");
 
-      expect(farmer.preferredLanguage).toBe("fr");
       expect(farmerRepository.save).toHaveBeenCalledWith(expect.objectContaining({ preferredLanguage: "fr" }));
     });
 
-    it("updatePreferredLanguage throws when the farmer doesn't exist", async () => {
+    // Regression (Phase 10a #11): this used to throw NotFoundException,
+    // giving a distinguishable signal (error vs success) that a nonexistent
+    // farmerId was in fact nonexistent — a bare-id enumeration oracle with no
+    // companion credential to legitimately check ownership against. Silently
+    // no-opping instead means probing this method with a fake id is
+    // indistinguishable from a real one from the caller's side.
+    it("silently no-ops (does not throw, does not save) when the farmer doesn't exist", async () => {
       farmerRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.updatePreferredLanguage("missing-id", "en")).rejects.toThrow(
-        'No farmer found with id "missing-id"',
-      );
+      await expect(service.updatePreferredLanguage("missing-id", "en")).resolves.toBeUndefined();
+      expect(farmerRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getPreferredLanguage (Phase 10a #11 — anti-enumeration)", () => {
+    it("returns the farmer's stored preference when one is set", async () => {
+      farmerRepository.findOne.mockResolvedValue({ id: "existing-id", preferredLanguage: "rw" });
+
+      await expect(service.getPreferredLanguage("existing-id")).resolves.toBe("rw");
+    });
+
+    it("returns null both when the farmer has no preference set and when the farmer doesn't exist at all — the two cases must be indistinguishable", async () => {
+      farmerRepository.findOne.mockResolvedValueOnce({ id: "existing-id", preferredLanguage: null });
+      await expect(service.getPreferredLanguage("existing-id")).resolves.toBeNull();
+
+      farmerRepository.findOne.mockResolvedValueOnce(null);
+      await expect(service.getPreferredLanguage("missing-id")).resolves.toBeNull();
     });
   });
 

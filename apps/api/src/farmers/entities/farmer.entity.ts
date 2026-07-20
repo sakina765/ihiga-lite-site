@@ -1,6 +1,17 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from "typeorm";
 import { ChatLanguage } from "../../ai/types";
 
+/**
+ * PII retention (Phase 10a #10 — deliberate, not accidental): phoneNumber,
+ * district, villageText, and every coordinate column below are stored in
+ * plaintext, indefinitely, with no automatic purge/anonymization job and no
+ * column-level encryption at rest. There is also no delete-farmer endpoint
+ * today, so this data currently has no expiry path at all short of a manual
+ * DB operation. Acceptable for now at this project's current scale, but this
+ * must be revisited before scaling to real production traffic — a data
+ * retention policy and (if this ever needs to satisfy something like GDPR's
+ * "right to erasure") an actual deletion/anonymization path.
+ */
 @Entity("farmers")
 export class Farmer {
   @PrimaryGeneratedColumn("uuid")

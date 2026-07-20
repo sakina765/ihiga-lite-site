@@ -66,7 +66,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     if (!farmerId) {
       return;
     }
-    fetch(`${getApiUrl()}/farmers/${farmerId}/language`)
+    fetch(`${getApiUrl()}/farmers/${encodeURIComponent(farmerId)}/language`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { preferredLanguage?: ChatLanguage | null } | null) => {
         if (data?.preferredLanguage) {
@@ -91,7 +91,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     // has already switched regardless of whether this call succeeds.
     const farmerId = localStorage.getItem(FARMER_STORAGE_KEY);
     if (farmerId) {
-      fetch(`${getApiUrl()}/farmers/${farmerId}/language`, {
+      fetch(`${getApiUrl()}/farmers/${encodeURIComponent(farmerId)}/language`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preferredLanguage: next }),

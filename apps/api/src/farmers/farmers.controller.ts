@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { FarmersService } from "./farmers.service";
 import { RegisterFarmerDto } from "./dto/register-farmer.dto";
@@ -40,22 +40,29 @@ export class FarmersController {
   // The persistent language switcher calls this directly (by farmerId) once a
   // farmer is registered — separate from register() above, which only ever
   // backfills a missing preference and never overwrites an explicit choice.
+  //
+  // A nonexistent farmerId is a silent no-op (see FarmersService.updatePreferredLanguage)
+  // rather than a 404 — this is a bare id lookup with no companion credential
+  // to check ownership against (unlike the chat module's conversationId+
+  // farmerId pair), so a distinguishable 404-vs-200 here would let a caller
+  // enumerate which farmerIds are real just by probing this endpoint.
   @Patch(":id/language")
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async updateLanguage(@Param("id") id: string, @Body() body: UpdatePreferredLanguageDto) {
-    const farmer = await this.farmersService.updatePreferredLanguage(id, body.preferredLanguage);
-    return { farmerId: farmer.id, preferredLanguage: farmer.preferredLanguage };
+    await this.farmersService.updatePreferredLanguage(id, body.preferredLanguage);
+    return { farmerId: id, preferredLanguage: body.preferredLanguage };
   }
 
   // LanguageProvider reads this on mount for a returning registered farmer —
   // deliberately minimal (just the language, not the full farmer record) since
   // that's all the UI needs, unlike register()'s full profile response.
+  //
+  // Same anti-enumeration treatment as updateLanguage above: a nonexistent
+  // farmerId returns 200 with preferredLanguage: null, identical to a real
+  // farmer who simply hasn't set one — never a distinguishable 404.
   @Get(":id/language")
   async getLanguage(@Param("id") id: string) {
-    const farmer = await this.farmersService.getById(id);
-    if (!farmer) {
-      throw new NotFoundException(`No farmer found with id "${id}"`);
-    }
-    return { farmerId: farmer.id, preferredLanguage: farmer.preferredLanguage };
+    const preferredLanguage = await this.farmersService.getPreferredLanguage(id);
+    return { farmerId: id, preferredLanguage };
   }
 }

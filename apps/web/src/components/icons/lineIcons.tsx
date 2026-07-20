@@ -185,6 +185,22 @@ export const LINE_ICONS: Record<string, React.ReactNode> = {
       <circle cx="6" cy="-2" r="0.8" fill="currentColor" stroke="none" />
     </>
   ),
+  trash: (
+    <>
+      <line x1="-7" y1="-6" x2="7" y2="-6" />
+      <path d="M-2.5,-6 L-2.5,-8 C-2.5,-9 -1.3,-9 0,-9 C1.3,-9 2.5,-9 2.5,-8 L2.5,-6" />
+      <path d="M-5,-6 L-4,7 C-4,8 -3.2,8.5 -2,8.5 L2,8.5 C3.2,8.5 4,8 4,7 L5,-6" />
+      <line x1="-1.6" y1="-2.5" x2="-1.2" y2="5" />
+      <line x1="1.6" y1="-2.5" x2="1.2" y2="5" />
+    </>
+  ),
+  moreVertical: (
+    <>
+      <circle cx="0" cy="-6" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="0" cy="0" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="0" cy="6" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
 };
 
 export type LineIconName = keyof typeof LINE_ICONS;

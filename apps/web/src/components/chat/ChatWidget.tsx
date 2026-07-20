@@ -1,21 +1,39 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { SeasonInfo } from "@ihiga-lite/shared";
-import { sendChatMessage, sendPhotoMessage, sendVoiceMessage } from "../../lib/chat-api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ConversationMessage, SeasonInfo } from "@ihiga-lite/shared";
+import { deleteConversation, getConversation, sendChatMessage, sendPhotoMessage, sendVoiceMessage } from "../../lib/chat-api";
+import { buildChatTranscriptPdf, type ChatPdfMessage } from "../../lib/chat-pdf";
+import { shareChatPdfViaWhatsApp } from "../../lib/chat-share";
 import { ChatHeader } from "./ChatHeader";
 import { SeasonStrip } from "./SeasonStrip";
 import { MessageList } from "./MessageList";
 import { ChipRow } from "./ChipRow";
 import { InputBar } from "./InputBar";
 import { ChatSidebar } from "./sidebar/ChatSidebar";
+import { DeleteConversationDialog } from "./DeleteConversationDialog";
+import { ChatToast } from "./ChatToast";
+import { SEASON_DESCRIPTOR_KEY, formatMonthRange } from "./SeasonStrip";
 import type { DisplayMessage } from "./types";
 import { useLanguage } from "../../i18n/LanguageProvider";
+
+const CONVERSATION_STORAGE_KEY = "ihiga_conversation_id";
 
 function makeId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** Bot messages are always persisted as type "text" — only a user-sent voice/photo needs the icon treatment. */
+function toDisplayMessage(message: ConversationMessage): DisplayMessage {
+  return {
+    id: makeId(),
+    role: message.role,
+    text: message.text,
+    timestamp: new Date(message.createdAt).getTime(),
+    inputType: message.role === "user" && message.type !== "text" ? message.type : undefined,
+  };
 }
 
 type LoadingKind = "text" | "voice" | "photo" | null;
@@ -66,6 +84,48 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
   // maize..." would leave the sidebar showing its stale empty state until a
   // full page reload.
   const [cropRefreshSignal, setCropRefreshSignal] = useState(0);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // On mount, resume whatever conversation was last active for this farmer
+  // (survives a refresh, or navigating to / and back to /chat) — without
+  // this, conversationIdRef only ever lived in memory and a fresh page load
+  // always looked like a brand-new conversation even though the backend
+  // still had the full message history sitting in the database.
+  useEffect(() => {
+    const storedConversationId = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (!storedConversationId) {
+      return;
+    }
+
+    let cancelled = false;
+    getConversation(storedConversationId, farmerId)
+      .then((history) => {
+        if (cancelled) {
+          return;
+        }
+        conversationIdRef.current = history.conversationId;
+        setSeason(history.season);
+        if (history.messages.length > 0) {
+          setMessages(history.messages.map(toDisplayMessage));
+        }
+      })
+      .catch(() => {
+        // Stale/unknown conversationId (or it belongs to a different
+        // farmerId) — fall back to a fresh conversation rather than getting
+        // stuck unable to send anything.
+        if (!cancelled) {
+          localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only ever resume once, on mount, for this farmerId
+  }, []);
 
   // With Groq this threshold rarely fires for text in practice — real calls measured
   // consistently under ~1s (vs. Gemini, which ranged from ~2s up to ~98s under heavy
@@ -96,6 +156,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
       const response = await sendChatMessage({ conversationId: conversationIdRef.current, farmerId, message: text });
 
       conversationIdRef.current = response.conversationId;
+      localStorage.setItem(CONVERSATION_STORAGE_KEY, response.conversationId);
       setSeason(response.season);
       setMessages((prev) => [
         ...prev,
@@ -123,6 +184,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
       const response = await sendVoiceMessage({ conversationId: conversationIdRef.current, farmerId, audioBlob });
 
       conversationIdRef.current = response.conversationId;
+      localStorage.setItem(CONVERSATION_STORAGE_KEY, response.conversationId);
       setSeason(response.season);
       // The user bubble only appears once we know what Whisper actually heard —
       // never optimistically, since we have no confirmed text before this point.
@@ -154,6 +216,7 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
       const response = await sendPhotoMessage({ conversationId: conversationIdRef.current, farmerId, imageFile });
 
       conversationIdRef.current = response.conversationId;
+      localStorage.setItem(CONVERSATION_STORAGE_KEY, response.conversationId);
       setSeason(response.season);
       setMessages((prev) => [
         ...prev,
@@ -185,6 +248,85 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
     retry();
   }, []);
 
+  // Nothing to delete or share until the farmer has actually said something —
+  // the lone "welcome" placeholder isn't a real exchange.
+  const hasConversation = useMemo(() => messages.some((m) => m.id !== "welcome"), [messages]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      if (conversationIdRef.current) {
+        await deleteConversation(conversationIdRef.current, farmerId);
+      }
+      // conversationIdRef and the stored id are deliberately left alone — the
+      // Conversation row (and the cropId/plantingDate/language it carries)
+      // still exists server-side, only its messages were cleared. Reusing
+      // the same id for whatever the farmer sends next keeps that crop
+      // tracking intact instead of falling back to the previously-tracked
+      // lookup in loadOrCreateConversation.
+      setMessages([{ id: "welcome", role: "bot", text: t("chat.widget.welcome"), timestamp: 0 }]);
+      setSeason(null);
+      setIsDeleteDialogOpen(false);
+    } catch {
+      setToastMessage(t("chat.deleteDialog.error"));
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [farmerId, t]);
+
+  const handleShare = useCallback(async () => {
+    setIsSharing(true);
+    try {
+      const pdfMessages: ChatPdfMessage[] = messages
+        .filter((message) => message.role !== "error")
+        .map((message) => ({
+          role: message.role as "user" | "bot",
+          text: message.text,
+          timestamp: message.timestamp,
+          inputType: message.inputType,
+        }));
+
+      const subtitle = season
+        ? `${t("chat.season.label", {
+            code: season.code,
+            localName: season.localName,
+            range: formatMonthRange(season.startDate, season.endDate),
+            descriptor: t(SEASON_DESCRIPTOR_KEY[season.code]),
+          })}`
+        : undefined;
+
+      const doc = buildChatTranscriptPdf(pdfMessages, {
+        docTitle: t("chat.share.pdfTitle"),
+        subtitle,
+        generatedOnLabel: t("chat.share.generatedOn", {
+          date: new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date()),
+        }),
+        youLabel: t("chat.share.you"),
+        botLabel: t("chat.share.bot"),
+        photoPlaceholder: t("chat.messageBubble.photoAlt"),
+        photoTag: t("chat.share.photoTag"),
+        voiceTag: t("chat.share.voiceTag"),
+        footerBrand: t("chat.share.footerBrand"),
+        pageLabelTemplate: t("chat.share.pageLabel"),
+      });
+
+      const outcome = await shareChatPdfViaWhatsApp(doc, {
+        filename: "ihiga-lite-chat.pdf",
+        shareTitle: t("chat.share.pdfTitle"),
+        shareText: t("chat.share.whatsappMessage"),
+        whatsappFallbackText: t("chat.share.whatsappMessage"),
+      });
+
+      if (outcome === "downloaded") {
+        setToastMessage(t("chat.share.fallbackToast"));
+      }
+    } catch {
+      setToastMessage(t("chat.share.error"));
+    } finally {
+      setIsSharing(false);
+    }
+  }, [messages, season, t]);
+
   return (
     // Genuinely full-width/full-height on desktop, like WhatsApp Web/Slack/
     // ChatGPT — not a centered card with empty page showing on both sides.
@@ -193,7 +335,12 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
     // comfortable max-width, so text/controls don't stretch uncomfortably
     // wide on an ultrawide monitor while the screen still reads as fully used.
     <div className="flex h-dvh flex-col bg-parchment">
-      <ChatHeader />
+      <ChatHeader
+        actionsDisabled={!hasConversation}
+        isSharing={isSharing}
+        onDeleteRequest={() => setIsDeleteDialogOpen(true)}
+        onShare={handleShare}
+      />
       <SeasonStrip season={season} />
       {/* The sidebar lives INSIDE the chat body, below the header/season
           strip — not as a page-level sibling spanning the full viewport
@@ -223,6 +370,14 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
           />
         </div>
       </div>
+
+      <DeleteConversationDialog
+        open={isDeleteDialogOpen}
+        isDeleting={isDeleting}
+        onCancel={() => setIsDeleteDialogOpen(false)}
+        onConfirm={handleDeleteConfirm}
+      />
+      <ChatToast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </div>
   );
 }

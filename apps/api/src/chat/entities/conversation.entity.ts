@@ -1,5 +1,6 @@
-import { Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { ChatLanguage } from "../../ai/types";
+import { Farmer } from "../../farmers/entities/farmer.entity";
 import { Message } from "./message.entity";
 
 @Entity("conversations")
@@ -18,6 +19,18 @@ export class Conversation {
   // requests without a farmerId.
   @Column({ name: "farmer_id", type: "uuid", nullable: true })
   farmerId: string | null;
+
+  // Phase 10a hygiene: an actual FK (cascading) where previously farmerId was
+  // just a bare, unconstrained uuid column — there is no delete-farmer
+  // endpoint today, so this doesn't change any current behavior, but it
+  // means a farmer row deleted by any future means (an actual delete
+  // endpoint, a manual GDPR-style erasure) can no longer leave PII-laden
+  // Conversation/Message rows permanently orphaned with a dangling
+  // reference. Optional/lazy — nothing in this codebase loads it today,
+  // farmerId above remains the column everything actually queries by.
+  @ManyToOne(() => Farmer, { onDelete: "CASCADE", nullable: true })
+  @JoinColumn({ name: "farmer_id" })
+  farmer?: Farmer | null;
 
   @Column({ name: "crop_id", type: "uuid", nullable: true })
   cropId: string | null;

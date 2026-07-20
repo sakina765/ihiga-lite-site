@@ -130,6 +130,105 @@ describe("ChatOrchestratorService", () => {
     expect(conversationRepository.save).toHaveBeenCalledWith(expect.objectContaining({ farmerId: FARMER_ID }));
   });
 
+  describe("conversation ownership (Phase 10a #3 — conversation-hijack fix)", () => {
+    const OTHER_FARMER_ID = "farmer-2";
+
+    it("rejects a message sent with someone else's conversationId, and never reassigns or touches that conversation", async () => {
+      // Farmer A's conversation — no pending crop proposal, so this exercises
+      // the loadOrCreateConversation ownership check specifically.
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+      });
+
+      // Farmer B (attacker) supplies farmer A's real conversationId with
+      // their own farmerId — this used to silently reassign the
+      // conversation's farmerId to the attacker (chat-orchestrator.service.ts's
+      // prepareTurnContext unconditionally overwrote it), letting them then
+      // read the victim's history via GET /chat/:id.
+      await expect(
+        service.handleMessage({ conversationId: "conv-existing", farmerId: OTHER_FARMER_ID, message: "hey" }),
+      ).rejects.toThrow('No conversation found with id "conv-existing" for this farmer');
+
+      // The rejection happens before any write — ownership is provably unchanged.
+      expect(conversationRepository.save).not.toHaveBeenCalled();
+      expect(groqService.generateReply).not.toHaveBeenCalled();
+    });
+
+    it("rejects a photo message sent with someone else's conversationId the same way", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+      });
+
+      await expect(
+        service.handlePhotoMessage({
+          conversationId: "conv-existing",
+          farmerId: OTHER_FARMER_ID,
+          imageBuffer: Buffer.from("x"),
+          mimeType: "image/png",
+        }),
+      ).rejects.toThrow('No conversation found with id "conv-existing" for this farmer');
+
+      expect(conversationRepository.save).not.toHaveBeenCalled();
+      expect(groqService.analyzeImage).not.toHaveBeenCalled();
+    });
+
+    it("rejects confirming (or declining) another farmer's pending crop-tracking proposal via a hijacked conversationId", async () => {
+      // Regression: resolvePendingCropConfirmation runs BEFORE
+      // prepareTurnContext/loadOrCreateConversation in handleMessage, with
+      // its own independent conversationId lookup — it used to have no
+      // farmerId check at all, so an attacker with someone else's
+      // conversationId could confirm/decline their pending crop proposal and
+      // receive the resulting ChatResponse (crop stage, reply text, etc.).
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-03-01",
+      });
+
+      await expect(
+        service.handleMessage({
+          conversationId: "conv-existing",
+          farmerId: OTHER_FARMER_ID,
+          message: "Yes, track Maize (planted Mar 1)",
+        }),
+      ).rejects.toThrow('No conversation found with id "conv-existing" for this farmer');
+
+      // Nothing about the victim's pending proposal was touched.
+      expect(conversationRepository.save).not.toHaveBeenCalled();
+    });
+
+    it("still lets a conversation with no farmerId yet (legacy/unclaimed row) be adopted by whichever farmer sends to it first", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-legacy",
+        language: "en",
+        farmerId: null,
+        cropId: null,
+        plantingDate: null,
+      });
+
+      const result = await service.handleMessage({
+        conversationId: "conv-legacy",
+        farmerId: FARMER_ID,
+        message: "hello",
+      });
+
+      expect(result.conversationId).toBe("conv-legacy");
+      expect(conversationRepository.save).toHaveBeenCalledWith(expect.objectContaining({ farmerId: FARMER_ID }));
+    });
+  });
+
   it("resolves and forwards the crop stage when cropId + plantingDate are known", async () => {
     cropsService.getCurrentStage.mockResolvedValue({
       id: "stage-1",
@@ -338,6 +437,54 @@ describe("ChatOrchestratorService", () => {
 
       expect(result.conversationId).toBe("conv-1");
       expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ weather: undefined }));
+    });
+  });
+
+  describe("farmerDistrictKnown", () => {
+    // Regression: when weather/seasonalCrops came back empty for an unrelated
+    // reason (transient lookup failure, or simply no seeded data), Groq had
+    // no way to tell that apart from "district never given" — and would ask
+    // the farmer to repeat information they'd already provided. This flag
+    // lets GroqService's prompt draw that distinction (see groq.service.ts's
+    // buildContextLines).
+    it("is true even when weather/seasonalCrops still come back empty, as long as the farmer has a district", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      weatherService.getForecast.mockRejectedValue(new Error("Open-Meteo down"));
+      cropSuggestionsService.getSuggestions.mockReturnValue({ season: makeSeason(), province: "Northern", crops: [] });
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
+
+      expect(groqService.generateReply).toHaveBeenCalledWith(
+        expect.objectContaining({ weather: undefined, seasonalCrops: undefined, farmerDistrictKnown: true }),
+      );
+    });
+
+    it("is false when the farmer genuinely has no district set", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: null });
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
+
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ farmerDistrictKnown: false }));
+    });
+
+    it("is false when the farmer record itself isn't found", async () => {
+      farmersService.getById.mockResolvedValue(null);
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
+
+      expect(groqService.generateReply).toHaveBeenCalledWith(expect.objectContaining({ farmerDistrictKnown: false }));
+    });
+
+    it("is forwarded to analyzeImage the same way for photo messages", async () => {
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+
+      await service.handlePhotoMessage({ farmerId: FARMER_ID, imageBuffer: Buffer.from("x"), mimeType: "image/png" });
+
+      expect(groqService.analyzeImage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ farmerDistrictKnown: true }),
+      );
     });
   });
 
@@ -590,6 +737,133 @@ describe("ChatOrchestratorService", () => {
       });
 
       expect(knowledgeService.search).toHaveBeenCalledWith("", "maize-id");
+    });
+  });
+
+  describe("getConversationHistory", () => {
+    it("returns messages in ascending (oldest-first) order along with resolved season/cropStage", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "fr",
+        farmerId: FARMER_ID,
+        cropId: "maize-id",
+        plantingDate: "2026-05-01",
+      });
+      messageRepository.find.mockResolvedValue([
+        { role: "user", type: "text", text: "Bonjour", createdAt: new Date(2026, 0, 1) },
+        { role: "bot", type: "text", text: "Bonjour, comment puis-je vous aider?", createdAt: new Date(2026, 0, 2) },
+      ]);
+      cropsService.getCurrentStage.mockResolvedValue({
+        id: "stage-1",
+        cropId: "maize-id",
+        name: "Vegetative growth",
+        orderIndex: 4,
+        weekStart: 6,
+        weekEnd: 8,
+        taskDescription: "Top-dress with nitrogen.",
+        taskDescriptionRw: "Ongeraho ifumbire.",
+      });
+
+      const result = await service.getConversationHistory("conv-existing", FARMER_ID);
+
+      expect(messageRepository.find).toHaveBeenCalledWith({
+        where: { conversationId: "conv-existing" },
+        order: { createdAt: "ASC" },
+      });
+      expect(result.conversationId).toBe("conv-existing");
+      expect(result.language).toBe("fr");
+      expect(result.cropStage).toEqual(expect.objectContaining({ name: "Vegetative growth" }));
+      expect(result.messages).toEqual([
+        expect.objectContaining({ role: "user", text: "Bonjour" }),
+        expect.objectContaining({ role: "bot", text: "Bonjour, comment puis-je vous aider?" }),
+      ]);
+    });
+
+    it("defaults language to 'en' when the conversation has none set", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: null,
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+      });
+
+      const result = await service.getConversationHistory("conv-existing", FARMER_ID);
+
+      expect(result.language).toBe("en");
+      expect(result.cropStage).toBeUndefined();
+    });
+
+    it("throws NotFoundException when the conversation doesn't exist", async () => {
+      conversationRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.getConversationHistory("missing-conv", FARMER_ID)).rejects.toThrow(
+        'No conversation found with id "missing-conv" for this farmer',
+      );
+      expect(messageRepository.find).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException (not a different error) when farmerId doesn't match the conversation's owner", async () => {
+      // Deliberately indistinguishable from "doesn't exist" — a farmer probing
+      // someone else's conversationId shouldn't be able to tell the difference
+      // between "wrong owner" and "no such conversation".
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: "some-other-farmer",
+        cropId: null,
+        plantingDate: null,
+      });
+
+      await expect(service.getConversationHistory("conv-existing", FARMER_ID)).rejects.toThrow(
+        'No conversation found with id "conv-existing" for this farmer',
+      );
+      expect(messageRepository.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteConversationMessages", () => {
+    beforeEach(() => {
+      messageRepository.delete = jest.fn(async () => ({ affected: 2 }));
+    });
+
+    it("deletes only the messages for that conversation, leaving the conversation row (and its tracked crop) intact", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: "maize-id",
+        plantingDate: "2026-05-01",
+      });
+
+      await service.deleteConversationMessages("conv-existing", FARMER_ID);
+
+      expect(messageRepository.delete).toHaveBeenCalledWith({ conversationId: "conv-existing" });
+      expect(conversationRepository.save).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException when the conversation doesn't exist", async () => {
+      conversationRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.deleteConversationMessages("missing-conv", FARMER_ID)).rejects.toThrow(
+        'No conversation found with id "missing-conv" for this farmer',
+      );
+      expect(messageRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException when farmerId doesn't match the conversation's owner", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: "some-other-farmer",
+        cropId: null,
+        plantingDate: null,
+      });
+
+      await expect(service.deleteConversationMessages("conv-existing", FARMER_ID)).rejects.toThrow(
+        'No conversation found with id "conv-existing" for this farmer',
+      );
+      expect(messageRepository.delete).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Farmer } from "./entities/farmer.entity";
@@ -123,14 +123,35 @@ export class FarmersService {
     return this.farmerRepository.findOne({ where: { id } });
   }
 
-  /** Explicit update path for the persistent language switcher — unlike registration's backfill-only pattern, this always overwrites, since the farmer is deliberately changing their preference right now. */
-  async updatePreferredLanguage(id: string, preferredLanguage: ChatLanguage): Promise<Farmer> {
+  /**
+   * Deliberately indistinguishable from "farmer exists but hasn't set a
+   * preference yet" — both return null. Unlike the chat module's
+   * conversationId+farmerId pair, this is a bare id lookup with no companion
+   * credential to check ownership against, so the only way to avoid a
+   * distinguishable exists-vs-doesn't-exist oracle here is to never
+   * surface the difference at all (see the same reasoning applied to
+   * updatePreferredLanguage below).
+   */
+  async getPreferredLanguage(id: string): Promise<ChatLanguage | null> {
+    const farmer = await this.farmerRepository.findOne({ where: { id } });
+    return farmer?.preferredLanguage ?? null;
+  }
+
+  /**
+   * Explicit update path for the persistent language switcher — unlike
+   * registration's backfill-only pattern, this always overwrites, since the
+   * farmer is deliberately changing their preference right now. A
+   * nonexistent id is a silent no-op rather than a distinguishable
+   * NotFoundException — probing this endpoint with candidate farmerIds
+   * learns nothing about which ones are real.
+   */
+  async updatePreferredLanguage(id: string, preferredLanguage: ChatLanguage): Promise<void> {
     const farmer = await this.farmerRepository.findOne({ where: { id } });
     if (!farmer) {
-      throw new NotFoundException(`No farmer found with id "${id}"`);
+      return;
     }
     farmer.preferredLanguage = preferredLanguage;
-    return this.farmerRepository.save(farmer);
+    await this.farmerRepository.save(farmer);
   }
 
   getAll(): Promise<Farmer[]> {

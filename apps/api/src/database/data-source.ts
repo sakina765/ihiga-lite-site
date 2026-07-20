@@ -14,7 +14,9 @@ const useSsl = process.env.DATABASE_SSL === "true";
 export const AppDataSource = new DataSource({
   type: "postgres",
   url: process.env.DATABASE_URL,
-  ssl: useSsl ? { rejectUnauthorized: false } : false,
+  // See the matching comment in typeorm.config.ts — validates the server
+  // certificate against the trusted CA bundle rather than accepting any cert.
+  ssl: useSsl ? { rejectUnauthorized: true } : false,
   entities: [`${__dirname}/../**/*.entity{.ts,.js}`],
   migrations: [`${__dirname}/migrations/*{.ts,.js}`],
   synchronize: false,

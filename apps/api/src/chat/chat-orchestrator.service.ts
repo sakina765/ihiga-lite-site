@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Not, Repository } from "typeorm";
 import { Conversation } from "./entities/conversation.entity";
@@ -19,7 +19,7 @@ import { WeatherService } from "../weather/weather.service";
 import { WeatherInfo } from "../weather/weather.types";
 import { parseIsoDateStringLocal } from "../common/date.util";
 import { extractKeywords } from "./extract-keywords";
-import { ChatResponse, HandleMessageParams, HandlePhotoMessageParams } from "./chat.types";
+import { ChatResponse, ConversationHistoryResponse, HandleMessageParams, HandlePhotoMessageParams } from "./chat.types";
 import { Crop } from "../crops/entities/crop.entity";
 
 const HISTORY_LIMIT = 8;
@@ -55,6 +55,7 @@ interface TurnContext {
   cropStage?: CropStage;
   weather?: WeatherInfo;
   seasonalCrops?: string[];
+  farmerDistrictKnown: boolean;
 }
 
 @Injectable()
@@ -82,13 +83,13 @@ export class ChatOrchestratorService {
     // a third turn, and a confirm short-circuits the rest of this method
     // entirely (no fresh Groq call needed for a deterministic "yes").
     if (params.conversationId) {
-      const confirmationResponse = await this.resolvePendingCropConfirmation(params.conversationId, params.message);
+      const confirmationResponse = await this.resolvePendingCropConfirmation(params.conversationId, params.farmerId, params.message);
       if (confirmationResponse) {
         return confirmationResponse;
       }
     }
 
-    const { conversation, season, cropStage, weather, seasonalCrops } = await this.prepareTurnContext({
+    const { conversation, season, cropStage, weather, seasonalCrops, farmerDistrictKnown } = await this.prepareTurnContext({
       conversationId: params.conversationId,
       farmerId: params.farmerId,
       cropId: params.cropId,
@@ -121,6 +122,7 @@ export class ChatOrchestratorService {
       conversationHistory,
       weather,
       seasonalCrops,
+      farmerDistrictKnown,
     });
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
@@ -137,7 +139,7 @@ export class ChatOrchestratorService {
    * persistence pattern via the shared private helpers below.
    */
   async handlePhotoMessage(params: HandlePhotoMessageParams): Promise<ChatResponse> {
-    const { conversation, season, cropStage, weather, seasonalCrops } = await this.prepareTurnContext({
+    const { conversation, season, cropStage, weather, seasonalCrops, farmerDistrictKnown } = await this.prepareTurnContext({
       conversationId: params.conversationId,
       farmerId: params.farmerId,
       cropId: params.cropId,
@@ -165,6 +167,7 @@ export class ChatOrchestratorService {
       caption: params.caption,
       weather,
       seasonalCrops,
+      farmerDistrictKnown,
     });
 
     await this.persistBotReply(conversation.id, structuredReply.replyText);
@@ -172,6 +175,80 @@ export class ChatOrchestratorService {
     const pendingProposal = await this.maybeProposeCropTracking(conversation, structuredReply);
 
     return this.toChatResponse(conversation, season, cropStage, structuredReply, pendingProposal);
+  }
+
+  /**
+   * The single ownership check for every entry point that accepts a
+   * client-supplied conversationId (chat turns, pending-crop confirmation,
+   * history reads, deletes) — a farmerId mismatch throws the exact same
+   * NotFoundException a genuinely nonexistent conversation would, so an
+   * attacker who obtained someone else's conversationId (they're returned in
+   * every ChatResponse and persisted in the browser, same trust tier as
+   * farmerId itself) can't distinguish "wrong owner" from "doesn't exist" —
+   * no new enumeration oracle. A null stored farmerId is treated as
+   * unclaimed rather than a mismatch (backward compatibility with
+   * conversations created before farmerId was required — see
+   * Conversation.farmerId's own doc comment), so it can still be adopted by
+   * whichever farmer sends to it first.
+   */
+  private assertConversationOwnership(conversation: Conversation, farmerId: string): void {
+    if (conversation.farmerId && conversation.farmerId !== farmerId) {
+      throw new NotFoundException(`No conversation found with id "${conversation.id}" for this farmer`);
+    }
+  }
+
+  /**
+   * Powers resuming a conversation client-side (after a refresh or navigating
+   * away and back) — the frontend has nowhere else to get message history
+   * from, since messages only ever live in this table. Scoped to farmerId, not
+   * just conversationId, so guessing/enumerating another farmer's UUID can't
+   * read their chat: a mismatch reads identically to "doesn't exist".
+   */
+  async getConversationHistory(conversationId: string, farmerId: string): Promise<ConversationHistoryResponse> {
+    const conversation = await this.conversationRepository.findOne({ where: { id: conversationId } });
+    if (!conversation) {
+      throw new NotFoundException(`No conversation found with id "${conversationId}" for this farmer`);
+    }
+    this.assertConversationOwnership(conversation, farmerId);
+
+    const messages = await this.messageRepository.find({
+      where: { conversationId },
+      order: { createdAt: "ASC" },
+    });
+
+    const season = this.seasonService.getCurrentSeason();
+    const cropStage = await this.resolveCropStage(conversation);
+
+    return {
+      conversationId: conversation.id,
+      language: conversation.language ?? "en",
+      season,
+      cropStage: cropStage ? this.toCropStageInfo(cropStage) : undefined,
+      messages: messages.map((message) => ({
+        role: message.role,
+        type: message.type,
+        text: message.text,
+        createdAt: message.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * Backs the chat page's "Delete conversation" action. Deliberately only
+   * clears the Messages, not the Conversation row itself — that row is also
+   * where cropId/plantingDate live (see loadOrCreateConversation's
+   * previously-tracked lookup), and a farmer clearing their chat history
+   * shouldn't also silently forget the crop they already confirmed tracking.
+   * Same ownership check as getConversationHistory, for the same reason.
+   */
+  async deleteConversationMessages(conversationId: string, farmerId: string): Promise<void> {
+    const conversation = await this.conversationRepository.findOne({ where: { id: conversationId } });
+    if (!conversation) {
+      throw new NotFoundException(`No conversation found with id "${conversationId}" for this farmer`);
+    }
+    this.assertConversationOwnership(conversation, farmerId);
+
+    await this.messageRepository.delete({ conversationId });
   }
 
   private async prepareTurnContext(input: {
@@ -200,7 +277,7 @@ export class ChatOrchestratorService {
     const weather = await this.resolveWeather(farmer);
     const seasonalCrops = this.resolveSeasonalCrops(farmer);
 
-    return { conversation, season, cropStage, weather, seasonalCrops };
+    return { conversation, season, cropStage, weather, seasonalCrops, farmerDistrictKnown: !!farmer?.district };
   }
 
   /** Absent when the farmer isn't found, hasn't given a district yet, or the district doesn't map to a known province. */
@@ -298,10 +375,20 @@ export class ChatOrchestratorService {
    * the normal Groq-backed flow for this message. Either way a pending
    * proposal is cleared as a side effect here, so it never lingers into a
    * third turn.
+   *
+   * Runs BEFORE prepareTurnContext in handleMessage, with its own
+   * conversationId lookup — so it needs its own ownership check rather than
+   * relying on loadOrCreateConversation's, otherwise a caller could confirm
+   * or decline (and see the resulting ChatResponse for) another farmer's
+   * pending proposal just by supplying their conversationId.
    */
-  private async resolvePendingCropConfirmation(conversationId: string, message: string): Promise<ChatResponse | null> {
+  private async resolvePendingCropConfirmation(conversationId: string, farmerId: string, message: string): Promise<ChatResponse | null> {
     const conversation = await this.conversationRepository.findOne({ where: { id: conversationId } });
-    if (!conversation?.pendingCropSlug || !conversation.pendingPlantingDate) {
+    if (!conversation) {
+      return null;
+    }
+    this.assertConversationOwnership(conversation, farmerId);
+    if (!conversation.pendingCropSlug || !conversation.pendingPlantingDate) {
       return null;
     }
 
@@ -368,6 +455,7 @@ export class ChatOrchestratorService {
     if (conversationId) {
       const existing = await this.conversationRepository.findOne({ where: { id: conversationId } });
       if (existing) {
+        this.assertConversationOwnership(existing, farmerId);
         return existing;
       }
       this.logger.warn(`conversationId "${conversationId}" not found — starting a new conversation instead`);
