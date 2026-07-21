@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { TypeOrmModuleOptions } from "@nestjs/typeorm";
+import { loadDatabaseCaCert } from "./database-ssl.util";
 
 const logger = new Logger("TypeOrmConfig");
 
@@ -37,8 +38,12 @@ export function buildTypeOrmOptions(configService: ConfigService): TypeOrmModule
     // trusted CA bundle — Supabase's certs chain to a public CA, so this
     // authenticates the connection instead of merely encrypting it (the
     // previous `false` accepted any certificate, including an
-    // attacker-presented one on the network path to Supabase).
-    ssl: useSsl ? { rejectUnauthorized: true } : false,
+    // attacker-presented one on the network path to Supabase). `ca` supplies
+    // Supabase's actual CA (see database-ssl.util.ts) since Node's default
+    // trust store doesn't include Supabase's intermediate CA — without it,
+    // rejectUnauthorized: true fails with "self-signed certificate in
+    // certificate chain" even against a legitimate connection.
+    ssl: useSsl ? { rejectUnauthorized: true, ca: loadDatabaseCaCert() } : false,
     synchronize,
     migrationsRun: true,
     migrations: [`${__dirname}/migrations/*{.ts,.js}`],

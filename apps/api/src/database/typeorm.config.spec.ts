@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { buildTypeOrmOptions } from "./typeorm.config";
+import * as databaseSslUtil from "./database-ssl.util";
 
 function makeConfigService(values: Record<string, string | undefined>): ConfigService {
   return { get: jest.fn((key: string) => values[key]) } as unknown as ConfigService;
@@ -58,10 +59,25 @@ describe("buildTypeOrmOptions", () => {
   });
 
   describe("SSL certificate validation (Phase 10a #6)", () => {
-    it("validates the server certificate (rejectUnauthorized: true) when DATABASE_SSL=true", () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it("validates the server certificate (rejectUnauthorized: true) when DATABASE_SSL=true, with no ca when the cert file isn't present", () => {
+      jest.spyOn(databaseSslUtil, "loadDatabaseCaCert").mockReturnValue(undefined);
       const options = buildTypeOrmOptions(makeConfigService({ DATABASE_SSL: "true" }));
 
       expect((options as { ssl?: unknown }).ssl).toEqual({ rejectUnauthorized: true });
+    });
+
+    it("includes the Supabase CA cert once it's present, without ever setting rejectUnauthorized to false", () => {
+      jest.spyOn(databaseSslUtil, "loadDatabaseCaCert").mockReturnValue("-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n");
+      const options = buildTypeOrmOptions(makeConfigService({ DATABASE_SSL: "true" }));
+
+      expect((options as { ssl?: { rejectUnauthorized?: boolean; ca?: string } }).ssl).toEqual({
+        rejectUnauthorized: true,
+        ca: "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n",
+      });
     });
 
     it("disables SSL entirely when DATABASE_SSL isn't 'true' (local Postgres)", () => {

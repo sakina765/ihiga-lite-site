@@ -24,7 +24,16 @@ before it (the API needs `DATABASE_URL`; the web app needs the API's URL).
 3. Supabase requires SSL — set `DATABASE_SSL=true` wherever `DATABASE_URL` is
    used (Render env vars, and locally if you ever point local dev at
    Supabase).
-4. Nothing else to do here manually: the API creates its own schema on first
+4. **Required alongside `DATABASE_SSL=true`:** download the CA certificate
+   from Supabase Dashboard → Project Settings → Database → SSL Configuration,
+   and save it as `apps/api/certs/supabase-ca.pem` in this repo (see
+   `apps/api/certs/README.md`). Without it, the API fails to connect with
+   `self-signed certificate in certificate chain` — Node's default trust
+   store doesn't include Supabase's intermediate CA, even though the
+   connection itself is legitimate. This certificate is public information
+   (Supabase publishes it for every project), so it's safe to commit — this
+   is not the same kind of secret as `DATABASE_URL`.
+5. Nothing else to do here manually: the API creates its own schema on first
    boot (see below) and the `uuid-ossp` extension Supabase projects ship with
    by default.
 
