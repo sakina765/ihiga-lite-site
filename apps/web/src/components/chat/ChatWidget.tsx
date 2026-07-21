@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ConversationMessage, SeasonInfo } from "@ihiga-lite/shared";
 import { deleteConversation, getConversation, sendChatMessage, sendPhotoMessage, sendVoiceMessage } from "../../lib/chat-api";
-import { buildChatTranscriptPdf, type ChatPdfMessage } from "../../lib/chat-pdf";
-import { shareChatPdfViaWhatsApp } from "../../lib/chat-share";
+import type { ChatPdfMessage } from "../../lib/chat-pdf";
 import { ChatHeader } from "./ChatHeader";
 import { SeasonStrip } from "./SeasonStrip";
 import { MessageList } from "./MessageList";
@@ -277,6 +276,16 @@ export function ChatWidget({ farmerId }: { farmerId: string }) {
   const handleShare = useCallback(async () => {
     setIsSharing(true);
     try {
+      // jsPDF (and its optional html2canvas/canvg/dompurify chain, lazy-loaded
+      // by jsPDF itself only if .html() is ever called, which it isn't here)
+      // is real weight — loaded on demand, right when a farmer actually taps
+      // "Share", instead of shipping in every /chat visitor's initial bundle
+      // for a feature most will never use this session.
+      const [{ buildChatTranscriptPdf }, { shareChatPdfViaWhatsApp }] = await Promise.all([
+        import("../../lib/chat-pdf"),
+        import("../../lib/chat-share"),
+      ]);
+
       const pdfMessages: ChatPdfMessage[] = messages
         .filter((message) => message.role !== "error")
         .map((message) => ({
