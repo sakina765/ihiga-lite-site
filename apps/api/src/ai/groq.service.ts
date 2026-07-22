@@ -6,7 +6,18 @@ import { AnalyzeImageContext, ChatLanguage, GenerateReplyParams, StructuredReply
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 const GROQ_WHISPER_MODEL = "whisper-large-v3";
-const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+// meta-llama/llama-4-scout-17b-16e-instruct (the original vision model here)
+// was deprecated and removed from Groq's catalog — every analyzeImage call
+// silently fell through to fallbackReply() in production (a real,
+// confirmed-live failure, not a hypothetical). qwen/qwen3.6-27b is Groq's
+// current documented vision-capable model and their own recommended
+// migration target. Verified directly against Groq's API with a real photo,
+// using this exact request shape (response_format: json_object,
+// max_tokens: 600): it returns clean, valid JSON with finish_reason "stop"
+// — the model's "thinking mode" (which can otherwise consume the entire
+// token budget on <think> reasoning before ever emitting the real answer)
+// does not leak through when json_object mode is enforced.
+const GROQ_VISION_MODEL = "qwen/qwen3.6-27b";
 
 const GROQ_REQUEST_TIMEOUT_MS = 60_000;
 // Replies are meant to be a few short sentences (rule 4/5 of the system

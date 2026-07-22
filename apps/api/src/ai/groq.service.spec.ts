@@ -355,7 +355,7 @@ describe("GroqService", () => {
 
       expect(result.replyText).toContain("not fully certain");
       const call = createMock.mock.calls[0][0];
-      expect(call.model).toBe("meta-llama/llama-4-scout-17b-16e-instruct");
+      expect(call.model).toBe("qwen/qwen3.6-27b");
       expect(call.messages[0].role).toBe("system");
       expect(call.messages[1].content[1].type).toBe("image_url");
       expect(call.messages[1].content[1].image_url.url).toMatch(/^data:image\/jpeg;base64,/);

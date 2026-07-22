@@ -175,21 +175,26 @@ to this Vercel URL (needed for CORS), then redeploy the API.
 
 ## 4. Post-deploy verification
 
+**Live URLs:**
+
+| Piece | URL |
+| --- | --- |
+| `apps/api` (Render) | https://ihiga-lite-site.onrender.com |
+| `apps/web` (Vercel) | https://ihiga-lite.vercel.app |
+
 Once all three pieces are live, do a full walkthrough against the real
 deployed URLs (not localhost) to confirm parity with local dev:
 
-- [ ] `GET <render-url>/health` returns `{"status":"ok","db":true}`
-- [ ] `<vercel-url>/case-study` renders and its "Open the working chatbot"
-      button links to `<vercel-url>/chat`
+- [ ] `GET https://ihiga-lite-site.onrender.com/health` returns `{"status":"ok","db":true}`
+- [ ] `https://ihiga-lite.vercel.app/case-study` renders and its "Open the
+      working chatbot" button links to `https://ihiga-lite.vercel.app/chat`
 - [ ] Register a new farmer (phone number, district, crop) via the onboarding
-      flow at `<vercel-url>`
+      flow at `https://ihiga-lite.vercel.app`
 - [ ] Send a text message in the chat and get a grounded reply
 - [ ] Send a voice message and confirm it transcribes and gets a reply
 - [ ] Send a photo and confirm it gets analyzed and gets a reply
-- [ ] Confirm `<render-url>/debug/*` is **not reachable** (404 or connection
-      refused) — proof `NODE_ENV=production` is actually set
+- [ ] Confirm `https://ihiga-lite-site.onrender.com/debug/*` is **not
+      reachable** (404 or connection refused) — proof `NODE_ENV=production`
+      is actually set
 - [ ] Spot-check Render logs for the above requests — confirm no raw phone
       numbers or message text appear, only masked numbers
-
-This checklist is what to run through once you share the live Render/Vercel
-URLs back — it hasn't been run yet since deployment happens on your end.
