@@ -12,8 +12,20 @@ const LANGUAGES: ChatLanguage[] = ["en", "rw", "fr"];
  * reload, and also becomes the Farmer.preferredLanguage override for a
  * registered farmer (see LanguageProvider.setLanguage).
  */
-export function LanguageSwitcher({ className = "" }: { className?: string }) {
+export function LanguageSwitcher({
+  className = "",
+  onLight = false,
+}: {
+  className?: string;
+  /** Set true when placed on a light background (e.g. the onboarding glass
+   * card) — text-leaf's contrast there is fine on the dark homepage/chat
+   * header backgrounds this component is otherwise used on, but reads as
+   * nearly invisible on a light card, so the unselected state switches to
+   * white there instead. */
+  onLight?: boolean;
+}) {
   const { language, setLanguage, t } = useLanguage();
+  const unselectedClassName = onLight ? "text-white hover:bg-sage/20" : "text-leaf hover:bg-sage/20";
 
   return (
     <div
@@ -30,7 +42,7 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
           className={
             language === lang
               ? "rounded-full bg-sage px-2 py-0.5 text-parchment"
-              : "rounded-full px-2 py-0.5 text-leaf transition-colors hover:bg-sage/20"
+              : `rounded-full px-2 py-0.5 transition-colors ${unselectedClassName}`
           }
         >
           {t(`languageSwitcher.${lang}`)}

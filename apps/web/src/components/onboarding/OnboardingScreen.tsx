@@ -222,7 +222,7 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
         <form onSubmit={handleSubmit} className="relative z-10 flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink">{t("onboarding.languageLabel")}</span>
-            <LanguageSwitcher />
+            <LanguageSwitcher onLight />
           </label>
 
           <label className="flex flex-col gap-1.5">
@@ -255,7 +255,7 @@ export function OnboardingScreen({ onRegistered }: { onRegistered: (farmerId: st
                 <span className="text-xs text-sage-dark">{t("onboarding.gpsGrantedAutoFilled")}</span>
               )}
               {locationStatus === "granted" && !gpsAutoFilled && (
-                <span className="text-xs text-ink-faint">{t("onboarding.gpsGrantedManual")}</span>
+                <span className="text-xs text-white">{t("onboarding.gpsGrantedManual")}</span>
               )}
               {locationStatus === "denied" && <span className="text-xs text-ink-faint">{t("onboarding.gpsDenied")}</span>}
             </div>
