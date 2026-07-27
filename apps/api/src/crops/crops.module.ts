@@ -7,16 +7,18 @@ import { CropsService } from "./crops.service";
 import { CropSuggestionsService } from "./crop-suggestions.service";
 import { CurrentCropService } from "./current-crop.service";
 import { CropsController } from "./crops.controller";
+import { AdminCropsController } from "./admin-crops.controller";
 import { SeasonModule } from "../season/season.module";
 import { FarmersModule } from "../farmers/farmers.module";
+import { AuthModule } from "../auth/auth.module";
 
 @Module({
   // Registers the Conversation entity for its own repository here — importing
   // only the entity class, not ChatModule itself, so there's no circular
   // dependency (ChatModule already imports CropsModule, not the reverse).
-  imports: [TypeOrmModule.forFeature([Crop, CropStage, Conversation]), SeasonModule, FarmersModule],
+  imports: [TypeOrmModule.forFeature([Crop, CropStage, Conversation]), SeasonModule, FarmersModule, AuthModule],
   providers: [CropsService, CropSuggestionsService, CurrentCropService],
-  controllers: [CropsController],
+  controllers: [CropsController, AdminCropsController],
   exports: [CropsService, CropSuggestionsService],
 })
 export class CropsModule {}

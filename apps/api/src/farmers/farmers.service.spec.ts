@@ -2,6 +2,9 @@ import { FarmersService } from "./farmers.service";
 
 describe("FarmersService", () => {
   let farmerRepository: any;
+  let conversationRepository: any;
+  let messageRepository: any;
+  let cropRepository: any;
   let sectorsService: { getById: jest.Mock };
   let geocodingService: { resolveVillage: jest.Mock };
   let service: FarmersService;
@@ -13,9 +16,19 @@ describe("FarmersService", () => {
       save: jest.fn(async (entity: any) => entity),
       find: jest.fn(async () => []),
     };
+    conversationRepository = { find: jest.fn(async () => []) };
+    messageRepository = { createQueryBuilder: jest.fn() };
+    cropRepository = { find: jest.fn(async () => []) };
     sectorsService = { getById: jest.fn() };
     geocodingService = { resolveVillage: jest.fn() };
-    service = new FarmersService(farmerRepository, sectorsService as any, geocodingService as any);
+    service = new FarmersService(
+      farmerRepository,
+      conversationRepository,
+      messageRepository,
+      cropRepository,
+      sectorsService as any,
+      geocodingService as any,
+    );
   });
 
   it("creates a new farmer with the normalized phone number when none exists", async () => {

@@ -17,6 +17,7 @@ import { FarmersModule } from "./farmers/farmers.module";
 import { WeatherModule } from "./weather/weather.module";
 import { LocationModule } from "./location/location.module";
 import { DebugModule } from "./debug/debug.module";
+import { AuthModule } from "./auth/auth.module";
 import { AppThrottlerGuard } from "./common/app-throttler.guard";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 
@@ -56,6 +57,7 @@ const isDevelopment = process.env.NODE_ENV === "development";
     FarmersModule,
     WeatherModule,
     LocationModule,
+    AuthModule,
     ...(isDevelopment ? [DebugModule] : []),
   ],
   providers: [

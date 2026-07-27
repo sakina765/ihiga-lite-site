@@ -12,11 +12,20 @@ export interface SeasonBoundary {
 }
 
 /**
- * Rwanda's agricultural season boundaries. Exact dates vary by source/region
- * by a few weeks — these are approximate and intentionally centralized here
- * so they can be tuned without touching SeasonService's logic.
+ * Rwanda's agricultural season boundaries.
+ *
+ * As of the admin panel's Phase 3, SeasonService reads the real,
+ * admin-editable boundaries from the `season_boundaries` table (seeded with
+ * these exact values by migration 1785174000000-CreateSeasonBoundaries) —
+ * this array is no longer the source of truth in production. It survives
+ * here as SeasonService's defense-in-depth fallback: season resolution runs
+ * on every single chat turn with no graceful "no season configured" path
+ * (unlike crops/knowledge/sectors, which degrade to an empty result), so if
+ * the table is ever found empty (a botched manual migration, a fresh DB
+ * whose seed step hasn't run yet), SeasonService falls back to this array
+ * rather than throwing and breaking the core chat flow.
  */
-export const SEASON_BOUNDARIES: SeasonBoundary[] = [
+export const DEFAULT_SEASON_BOUNDARIES: SeasonBoundary[] = [
   {
     code: "A",
     localName: "Urugaryi",

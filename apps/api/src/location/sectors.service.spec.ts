@@ -2,6 +2,7 @@ import { SectorsService } from "./sectors.service";
 
 describe("SectorsService", () => {
   let sectorRepository: any;
+  let farmerRepository: any;
   let service: SectorsService;
 
   beforeEach(() => {
@@ -9,8 +10,12 @@ describe("SectorsService", () => {
       find: jest.fn(),
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(),
+      create: jest.fn((data: any) => data),
+      save: jest.fn(async (entity: any) => ({ id: "new-id", ...entity })),
+      delete: jest.fn(async () => ({ affected: 1 })),
     };
-    service = new SectorsService(sectorRepository);
+    farmerRepository = { count: jest.fn() };
+    service = new SectorsService(sectorRepository, farmerRepository);
   });
 
   it("returns sectors for a district, sorted by name", async () => {
@@ -60,5 +65,70 @@ describe("SectorsService", () => {
     const result = await service.findNearest(0, 0);
 
     expect(result).toBeNull();
+  });
+
+  describe("admin CRUD (Phase 7)", () => {
+    it("adminList scopes to a district when given, all sectors otherwise", async () => {
+      sectorRepository.find.mockResolvedValue([]);
+
+      await service.adminList("Musanze");
+      expect(sectorRepository.find).toHaveBeenCalledWith({ where: { district: "Musanze" }, order: { district: "ASC", name: "ASC" } });
+
+      await service.adminList();
+      expect(sectorRepository.find).toHaveBeenCalledWith({ where: {}, order: { district: "ASC", name: "ASC" } });
+    });
+
+    it("create defaults coordinatesApproximated to true when not explicitly given", async () => {
+      await service.create({ district: "Musanze", name: "Test Sector", lat: -1.5, lng: 29.6 });
+
+      expect(sectorRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ coordinatesApproximated: true }),
+      );
+    });
+
+    it("create respects an explicit coordinatesApproximated: false (a real surveyed coordinate)", async () => {
+      await service.create({ district: "Musanze", name: "Test Sector", lat: -1.5, lng: 29.6, coordinatesApproximated: false });
+
+      expect(sectorRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ coordinatesApproximated: false }),
+      );
+    });
+
+    it("update only changes fields actually provided", async () => {
+      sectorRepository.findOne.mockResolvedValue({
+        id: "s1",
+        district: "Musanze",
+        name: "Old Name",
+        nameRw: null,
+        lat: -1.5,
+        lng: 29.6,
+        coordinatesApproximated: true,
+      });
+
+      const result = await service.update("s1", { lat: -1.501, lng: 29.601, coordinatesApproximated: false });
+
+      expect(result.name).toBe("Old Name");
+      expect(result.lat).toBe(-1.501);
+      expect(result.coordinatesApproximated).toBe(false);
+    });
+
+    it("update throws NotFoundException for an unknown id", async () => {
+      sectorRepository.findOne.mockResolvedValue(null);
+      await expect(service.update("missing", { lat: 0, lng: 0 })).rejects.toThrow('No sector found with id "missing"');
+    });
+
+    it("delete throws NotFoundException when nothing was actually deleted", async () => {
+      sectorRepository.delete.mockResolvedValue({ affected: 0 });
+      await expect(service.delete("missing")).rejects.toThrow('No sector found with id "missing"');
+    });
+
+    it("getTrackingCount delegates to farmerRepository.count scoped by sectorId", async () => {
+      farmerRepository.count.mockResolvedValue(3);
+
+      const result = await service.getTrackingCount("s1");
+
+      expect(farmerRepository.count).toHaveBeenCalledWith({ where: { sectorId: "s1" } });
+      expect(result).toBe(3);
+    });
   });
 });

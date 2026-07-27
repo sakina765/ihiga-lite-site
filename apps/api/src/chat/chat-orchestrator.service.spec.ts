@@ -866,4 +866,119 @@ describe("ChatOrchestratorService", () => {
       expect(messageRepository.delete).not.toHaveBeenCalled();
     });
   });
+
+  describe("grounding data (retrievedFactIds)", () => {
+    it("records which knowledge facts were retrieved on the bot's Message row, for a text reply", async () => {
+      knowledgeService.search.mockResolvedValue([
+        { id: "fact-1", topic: "harvest", factText: "...", tags: [] },
+        { id: "fact-2", topic: "harvest", factText: "...", tags: [] },
+      ]);
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "when should I harvest maize?" });
+
+      const botMessageCall = messageRepository.create.mock.calls.find((call: any[]) => call[0].role === "bot");
+      expect(botMessageCall[0].retrievedFactIds).toEqual(["fact-1", "fact-2"]);
+    });
+
+    it("records an empty array (not null) when knowledge search ran but found nothing", async () => {
+      knowledgeService.search.mockResolvedValue([]);
+
+      await service.handleMessage({ farmerId: FARMER_ID, message: "hello" });
+
+      const botMessageCall = messageRepository.create.mock.calls.find((call: any[]) => call[0].role === "bot");
+      expect(botMessageCall[0].retrievedFactIds).toEqual([]);
+    });
+
+    it("records the same for a photo reply", async () => {
+      // A caption is required here so searchKnowledge has terms to search on
+      // at all — with neither a caption nor a tracked cropId, it correctly
+      // short-circuits to [] without ever calling knowledgeService.search
+      // (see "still searches knowledge scoped to the crop..." above).
+      knowledgeService.search.mockResolvedValue([{ id: "fact-3", topic: "pest", factText: "...", tags: [] }]);
+
+      await service.handlePhotoMessage({
+        farmerId: FARMER_ID,
+        imageBuffer: Buffer.from("x"),
+        mimeType: "image/jpeg",
+        caption: "my maize leaves look damaged",
+      });
+
+      const botMessageCall = messageRepository.create.mock.calls.find((call: any[]) => call[0].role === "bot");
+      expect(botMessageCall[0].retrievedFactIds).toEqual(["fact-3"]);
+    });
+
+    it("records null (not applicable) for the deterministic tracking-confirmed reply, since it never runs a knowledge search", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-06-01",
+      });
+
+      await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "Yes, track Maize (planted Jun 1)",
+      });
+
+      const botMessageCall = messageRepository.create.mock.calls.find((call: any[]) => call[0].role === "bot");
+      expect(botMessageCall[0].retrievedFactIds).toBeNull();
+    });
+  });
+
+  describe("deactivated farmer accounts", () => {
+    beforeEach(() => {
+      farmersService.getById.mockResolvedValue({
+        id: FARMER_ID,
+        district: null,
+        preferredLanguage: null,
+        deactivatedAt: new Date("2026-01-01"),
+      });
+    });
+
+    it("handleMessage returns a deactivation notice and never calls Groq", async () => {
+      const result = await service.handleMessage({ farmerId: FARMER_ID, message: "hello" });
+
+      expect(result.replyText).toContain("deactivated");
+      expect(groqService.generateReply).not.toHaveBeenCalled();
+      // Still persists the farmer's message and a bot reply, same as any real turn.
+      expect(messageRepository.save).toHaveBeenCalledTimes(2);
+    });
+
+    it("handlePhotoMessage returns a deactivation notice and never calls the vision model", async () => {
+      const result = await service.handlePhotoMessage({
+        farmerId: FARMER_ID,
+        imageBuffer: Buffer.from("fake"),
+        mimeType: "image/jpeg",
+      });
+
+      expect(result.replyText).toContain("deactivated");
+      expect(groqService.analyzeImage).not.toHaveBeenCalled();
+    });
+
+    it("even a pending crop-tracking confirmation is blocked for a deactivated account", async () => {
+      conversationRepository.findOne.mockResolvedValue({
+        id: "conv-existing",
+        language: "en",
+        farmerId: FARMER_ID,
+        cropId: null,
+        plantingDate: null,
+        pendingCropSlug: "maize",
+        pendingPlantingDate: "2026-06-01",
+      });
+
+      const result = await service.handleMessage({
+        conversationId: "conv-existing",
+        farmerId: FARMER_ID,
+        message: "Yes, track Maize (planted Jun 1)",
+      });
+
+      expect(result.replyText).toContain("deactivated");
+      // Never reached the pending-confirmation resolution path, let alone Groq.
+      expect(groqService.generateReply).not.toHaveBeenCalled();
+    });
+  });
 });

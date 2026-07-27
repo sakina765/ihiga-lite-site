@@ -1,94 +1,69 @@
-import { Injectable } from "@nestjs/common";
-import { SEASON_BOUNDARIES, SeasonBoundary } from "./season.constants";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { SeasonBoundaryEntity } from "./entities/season-boundary.entity";
+import { DEFAULT_SEASON_BOUNDARIES, SeasonCode } from "./season.constants";
+import { resolveSeasonFromBoundaries } from "./season-resolution.util";
 import { SeasonInfo } from "./season.types";
-
-interface MonthDay {
-  month: number;
-  day: number;
-}
-
-function toMonthDay(date: Date): MonthDay {
-  return { month: date.getMonth() + 1, day: date.getDate() };
-}
-
-function compareMonthDay(a: MonthDay, b: MonthDay): number {
-  return a.month !== b.month ? a.month - b.month : a.day - b.day;
-}
-
-/** Whether a boundary's start..end range crosses a calendar year (e.g. Sept -> Feb). */
-function isWrapping(boundary: SeasonBoundary): boolean {
-  return (
-    compareMonthDay(
-      { month: boundary.startMonth, day: boundary.startDay },
-      { month: boundary.endMonth, day: boundary.endDay },
-    ) > 0
-  );
-}
-
-function matchesBoundary(md: MonthDay, boundary: SeasonBoundary): boolean {
-  const start = { month: boundary.startMonth, day: boundary.startDay };
-  const end = { month: boundary.endMonth, day: boundary.endDay };
-
-  if (!isWrapping(boundary)) {
-    return compareMonthDay(md, start) >= 0 && compareMonthDay(md, end) <= 0;
-  }
-  return compareMonthDay(md, start) >= 0 || compareMonthDay(md, end) <= 0;
-}
-
-/** Resolves the concrete (year-bound) start/end Date instances for the season a given date falls in. */
-function resolveYearBounds(date: Date, boundary: SeasonBoundary): { startDate: Date; endDate: Date } {
-  const year = date.getFullYear();
-  const md = toMonthDay(date);
-
-  if (!isWrapping(boundary)) {
-    return {
-      startDate: new Date(year, boundary.startMonth - 1, boundary.startDay),
-      endDate: new Date(year, boundary.endMonth - 1, boundary.endDay, 23, 59, 59, 999),
-    };
-  }
-
-  const start = { month: boundary.startMonth, day: boundary.startDay };
-  const inLatePartOfYear = compareMonthDay(md, start) >= 0;
-
-  if (inLatePartOfYear) {
-    // e.g. date is in Sept-Dec: season started this year, ends next year
-    return {
-      startDate: new Date(year, boundary.startMonth - 1, boundary.startDay),
-      endDate: new Date(year + 1, boundary.endMonth - 1, boundary.endDay, 23, 59, 59, 999),
-    };
-  }
-  // e.g. date is in Jan-Feb: season started last year, ends this year
-  return {
-    startDate: new Date(year - 1, boundary.startMonth - 1, boundary.startDay),
-    endDate: new Date(year, boundary.endMonth - 1, boundary.endDay, 23, 59, 59, 999),
-  };
-}
+import { AdminUpdateSeasonBoundaryDto } from "./dto/admin-update-season-boundary.dto";
 
 @Injectable()
 export class SeasonService {
+  private readonly logger = new Logger(SeasonService.name);
+
+  constructor(@InjectRepository(SeasonBoundaryEntity) private readonly boundaryRepository: Repository<SeasonBoundaryEntity>) {}
+
   /** Returns the season for `date`, defaulting to today when omitted. */
-  getCurrentSeason(date: Date = new Date()): SeasonInfo {
+  async getCurrentSeason(date: Date = new Date()): Promise<SeasonInfo> {
     return this.getSeasonByDate(date);
   }
 
   /** Explicit variant of getCurrentSeason — useful for testing against a fixed date. */
-  getSeasonByDate(date: Date): SeasonInfo {
-    const md = toMonthDay(date);
-    const boundary = SEASON_BOUNDARIES.find((b) => matchesBoundary(md, b));
+  async getSeasonByDate(date: Date): Promise<SeasonInfo> {
+    const boundaries = await this.boundaryRepository.find();
 
-    if (!boundary) {
-      // SEASON_BOUNDARIES is expected to cover the full year with no gaps.
-      throw new Error(`No season boundary configured for date ${date.toISOString()}`);
+    if (boundaries.length === 0) {
+      // See CreateSeasonBoundaries migration's doc comment — this should be
+      // unreachable in practice (the migration seeds these rows atomically),
+      // but season resolution runs on every chat turn with nothing sensible
+      // to fall back to in the DB itself, so a coded default is worth having.
+      this.logger.warn("season_boundaries table is empty — falling back to DEFAULT_SEASON_BOUNDARIES");
+      return resolveSeasonFromBoundaries(date, DEFAULT_SEASON_BOUNDARIES);
     }
 
-    const { startDate, endDate } = resolveYearBounds(date, boundary);
+    return resolveSeasonFromBoundaries(date, boundaries);
+  }
 
-    return {
-      code: boundary.code,
-      localName: boundary.localName,
-      englishName: boundary.englishName,
-      startDate,
-      endDate,
-    };
+  /** Admin read view — the raw DB rows (month/day boundaries), not the resolved SeasonInfo shape getCurrentSeason returns. */
+  adminList(): Promise<SeasonBoundaryEntity[]> {
+    return this.boundaryRepository.find({ order: { code: "ASC" } });
+  }
+
+  async adminUpdate(code: SeasonCode, dto: AdminUpdateSeasonBoundaryDto): Promise<SeasonBoundaryEntity> {
+    const boundary = await this.boundaryRepository.findOne({ where: { code } });
+    if (!boundary) {
+      throw new NotFoundException(`No season boundary found for code "${code}"`);
+    }
+
+    if (dto.localName !== undefined) {
+      boundary.localName = dto.localName;
+    }
+    if (dto.englishName !== undefined) {
+      boundary.englishName = dto.englishName;
+    }
+    if (dto.startMonth !== undefined) {
+      boundary.startMonth = dto.startMonth;
+    }
+    if (dto.startDay !== undefined) {
+      boundary.startDay = dto.startDay;
+    }
+    if (dto.endMonth !== undefined) {
+      boundary.endMonth = dto.endMonth;
+    }
+    if (dto.endDay !== undefined) {
+      boundary.endDay = dto.endDay;
+    }
+
+    return this.boundaryRepository.save(boundary);
   }
 }

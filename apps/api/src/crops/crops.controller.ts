@@ -29,7 +29,7 @@ export class CropsController {
   async suggestions(@Query() query: CropsQueryDto): Promise<CropSuggestionsResult> {
     const farmer = await this.farmersService.getById(query.farmerId);
     if (!farmer?.district) {
-      return { season: this.seasonService.getCurrentSeason(), province: null, crops: [] };
+      return { season: await this.seasonService.getCurrentSeason(), province: null, crops: [] };
     }
     return this.cropSuggestionsService.getSuggestions(farmer.district);
   }

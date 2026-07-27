@@ -4,6 +4,9 @@ import { Conversation } from "./entities/conversation.entity";
 import { Message } from "./entities/message.entity";
 import { ChatOrchestratorService } from "./chat-orchestrator.service";
 import { ChatController } from "./chat.controller";
+import { AdminConversationsService } from "./admin-conversations.service";
+import { AdminConversationsController } from "./admin-conversations.controller";
+import { AdminMessagesController } from "./admin-messages.controller";
 import { LanguageModule } from "../language/language.module";
 import { SeasonModule } from "../season/season.module";
 import { CropsModule } from "../crops/crops.module";
@@ -11,6 +14,7 @@ import { KnowledgeModule } from "../knowledge/knowledge.module";
 import { AiModule } from "../ai/ai.module";
 import { FarmersModule } from "../farmers/farmers.module";
 import { WeatherModule } from "../weather/weather.module";
+import { AuthModule } from "../auth/auth.module";
 
 @Module({
   imports: [
@@ -22,9 +26,10 @@ import { WeatherModule } from "../weather/weather.module";
     AiModule,
     FarmersModule,
     WeatherModule,
+    AuthModule,
   ],
-  providers: [ChatOrchestratorService],
-  controllers: [ChatController],
+  providers: [ChatOrchestratorService, AdminConversationsService],
+  controllers: [ChatController, AdminConversationsController, AdminMessagesController],
   exports: [ChatOrchestratorService],
 })
 export class ChatModule {}

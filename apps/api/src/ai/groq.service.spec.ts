@@ -168,6 +168,8 @@ describe("GroqService", () => {
           factTextRw: "Ibigori biba biteguye igihe amakoba yahindutse ibara ry'ikawa.",
           source: "RICA",
           tags: ["harvest", "maize"],
+          reviewed: false,
+          reviewedAt: null,
         },
       ],
     });

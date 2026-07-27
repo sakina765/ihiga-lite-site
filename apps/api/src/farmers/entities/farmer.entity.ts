@@ -1,6 +1,8 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from "typeorm";
 import { ChatLanguage } from "../../ai/types";
 
+export type FarmerRole = "farmer" | "admin";
+
 /**
  * PII retention (Phase 10a #10 — deliberate, not accidental): phoneNumber,
  * district, villageText, and every coordinate column below are stored in
@@ -71,4 +73,26 @@ export class Farmer {
 
   @Column({ name: "resolved_longitude", type: "double precision", nullable: true })
   resolvedLongitude: number | null;
+
+  /** "admin" is granted manually via the promote-to-admin CLI script — there is no self-service admin signup. */
+  @Column({ type: "varchar", length: 10, default: "farmer" })
+  role: FarmerRole;
+
+  /** Only ever set for role === "admin" rows — regular farmers have no password and never authenticate. */
+  @Column({ name: "password_hash", type: "varchar", nullable: true })
+  passwordHash: string | null;
+
+  /**
+   * Set by an admin (see AdminFarmersController) when a farmer account is
+   * deactivated — a soft delete, never a row deletion, since farmer data is
+   * never destroyed silently. A non-null value blocks new chat replies
+   * (ChatOrchestratorService returns a deactivation notice instead of calling
+   * Groq — real anti-abuse/cost-control teeth, not just an admin-facing
+   * label) and excludes the farmer from the daily SMS job. Re-registering
+   * with the same phone number does NOT clear this — registerOrFind's
+   * backfill-only writes never touch it, so a deactivated farmer can't
+   * simply re-register their way back to active.
+   */
+  @Column({ name: "deactivated_at", type: "timestamp", nullable: true })
+  deactivatedAt: Date | null;
 }

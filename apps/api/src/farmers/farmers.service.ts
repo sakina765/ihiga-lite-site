@@ -1,11 +1,42 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, IsNull, Not, Repository } from "typeorm";
 import { Farmer } from "./entities/farmer.entity";
 import { normalizePhoneNumber } from "./phone-number.util";
 import { SectorsService } from "../location/sectors.service";
 import { GeocodingService } from "../location/geocoding.service";
 import { ChatLanguage } from "../ai/types";
+import { Conversation } from "../chat/entities/conversation.entity";
+import { Message } from "../chat/entities/message.entity";
+import { Crop } from "../crops/entities/crop.entity";
+import { Sector } from "../location/entities/sector.entity";
+
+export interface AdminFarmerListItem {
+  id: string;
+  phoneNumber: string;
+  district: string | null;
+  preferredLanguage: ChatLanguage | null;
+  createdAt: Date;
+  deactivatedAt: Date | null;
+  trackedCropName: string | null;
+}
+
+export interface AdminFarmerConversationSummary {
+  id: string;
+  createdAt: Date;
+  language: ChatLanguage | null;
+  cropName: string | null;
+  messageCount: number;
+}
+
+/** Farmer's own fields minus passwordHash — a credential hash must never leave the server, even to an authenticated admin. */
+export type AdminFarmerProfile = Omit<Farmer, "passwordHash">;
+
+export interface AdminFarmerDetail {
+  farmer: AdminFarmerProfile;
+  sector: Sector | null;
+  conversations: AdminFarmerConversationSummary[];
+}
 
 export interface RegisterOrFindParams {
   phoneNumber: string;
@@ -32,6 +63,9 @@ interface ResolvedSectorFields {
 export class FarmersService {
   constructor(
     @InjectRepository(Farmer) private readonly farmerRepository: Repository<Farmer>,
+    @InjectRepository(Conversation) private readonly conversationRepository: Repository<Conversation>,
+    @InjectRepository(Message) private readonly messageRepository: Repository<Message>,
+    @InjectRepository(Crop) private readonly cropRepository: Repository<Crop>,
     private readonly sectorsService: SectorsService,
     private readonly geocodingService: GeocodingService,
   ) {}
@@ -160,5 +194,161 @@ export class FarmersService {
 
   save(farmer: Farmer): Promise<Farmer> {
     return this.farmerRepository.save(farmer);
+  }
+
+  private async getByIdOrThrow(id: string): Promise<Farmer> {
+    const farmer = await this.farmerRepository.findOne({ where: { id } });
+    if (!farmer) {
+      throw new NotFoundException(`No farmer found with id "${id}"`);
+    }
+    return farmer;
+  }
+
+  /**
+   * Same lookup, but 404s for an admin account too — every admin-panel
+   * farmer-oversight method (detail view, deactivate, reactivate) uses this,
+   * not getByIdOrThrow, so this surface can never be pointed at an admin's
+   * own Farmer row (matches adminList's role='farmer' filter).
+   */
+  private async getFarmerRecordOrThrow(id: string): Promise<Farmer> {
+    const farmer = await this.getByIdOrThrow(id);
+    if (farmer.role !== "farmer") {
+      throw new NotFoundException(`No farmer found with id "${id}"`);
+    }
+    return farmer;
+  }
+
+  /** Strips passwordHash — never sent to the client, even hashed, even to an authenticated admin. */
+  private toAdminProfile(farmer: Farmer): AdminFarmerProfile {
+    const { passwordHash: _passwordHash, ...profile } = farmer;
+    return profile;
+  }
+
+  /**
+   * Paginated, searchable read-only list for the admin panel — role='farmer'
+   * only, so admin accounts (also Farmer rows, see FarmerRole) never show up
+   * as something to manage/deactivate here. Search matches phone number OR
+   * district (loosely called "region" in the admin UI) with a single ILIKE,
+   * since this is an authenticated-admin-only lookup, not farmer-facing (the
+   * anti-enumeration masking elsewhere in this codebase doesn't apply here —
+   * the whole point of this endpoint is letting an admin find a real farmer).
+   */
+  async adminList(params: { search?: string; page: number; pageSize: number }): Promise<{ items: AdminFarmerListItem[]; total: number }> {
+    const qb = this.farmerRepository.createQueryBuilder("farmer").where("farmer.role = :role", { role: "farmer" });
+
+    if (params.search) {
+      qb.andWhere("(farmer.phoneNumber ILIKE :search OR farmer.district ILIKE :search)", { search: `%${params.search}%` });
+    }
+
+    const total = await qb.getCount();
+    const farmers = await qb
+      .orderBy("farmer.createdAt", "DESC")
+      .skip((params.page - 1) * params.pageSize)
+      .take(params.pageSize)
+      .getMany();
+
+    const trackedCropByFarmerId = await this.resolveTrackedCropNames(farmers.map((f) => f.id));
+
+    const items: AdminFarmerListItem[] = farmers.map((farmer) => ({
+      id: farmer.id,
+      phoneNumber: farmer.phoneNumber,
+      district: farmer.district,
+      preferredLanguage: farmer.preferredLanguage,
+      createdAt: farmer.createdAt,
+      deactivatedAt: farmer.deactivatedAt,
+      trackedCropName: trackedCropByFarmerId.get(farmer.id) ?? null,
+    }));
+
+    return { items, total };
+  }
+
+  /**
+   * Batched (not N+1) — one conversations query and one crops query for the
+   * whole page, then joined in memory. Picks each farmer's MOST RECENT
+   * tracked crop, same "latest conversation with cropId+plantingDate set"
+   * rule as CurrentCropService.getForFarmer uses for a single farmer.
+   */
+  private async resolveTrackedCropNames(farmerIds: string[]): Promise<Map<string, string>> {
+    if (farmerIds.length === 0) {
+      return new Map();
+    }
+
+    const conversations = await this.conversationRepository.find({
+      where: { farmerId: In(farmerIds), cropId: Not(IsNull()), plantingDate: Not(IsNull()) },
+      order: { createdAt: "DESC" },
+    });
+
+    const latestCropIdByFarmerId = new Map<string, string>();
+    for (const conversation of conversations) {
+      if (conversation.farmerId && !latestCropIdByFarmerId.has(conversation.farmerId)) {
+        latestCropIdByFarmerId.set(conversation.farmerId, conversation.cropId!);
+      }
+    }
+
+    const cropIds = [...new Set(latestCropIdByFarmerId.values())];
+    const crops = cropIds.length > 0 ? await this.cropRepository.find({ where: { id: In(cropIds) } }) : [];
+    const cropNameById = new Map(crops.map((crop) => [crop.id, crop.name]));
+
+    const result = new Map<string, string>();
+    for (const [farmerId, cropId] of latestCropIdByFarmerId) {
+      const name = cropNameById.get(cropId);
+      if (name) {
+        result.set(farmerId, name);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Single-farmer detail view — includes the farmer's conversation list
+   * (id/date/language/crop/message count) but deliberately NOT message
+   * content, which is Phase 5's conversation viewer, not farmer oversight.
+   */
+  async adminGetDetail(id: string): Promise<AdminFarmerDetail> {
+    const farmer = await this.getFarmerRecordOrThrow(id);
+    const sector = farmer.sectorId ? await this.sectorsService.getById(farmer.sectorId) : null;
+
+    const conversations = await this.conversationRepository.find({ where: { farmerId: id }, order: { createdAt: "DESC" } });
+
+    const cropIds = [...new Set(conversations.filter((c) => c.cropId).map((c) => c.cropId as string))];
+    const crops = cropIds.length > 0 ? await this.cropRepository.find({ where: { id: In(cropIds) } }) : [];
+    const cropNameById = new Map(crops.map((crop) => [crop.id, crop.name]));
+
+    const messageCountByConversationId = new Map<string, number>();
+    if (conversations.length > 0) {
+      const rawCounts = await this.messageRepository
+        .createQueryBuilder("message")
+        .select("message.conversationId", "conversationId")
+        .addSelect("COUNT(*)", "count")
+        .where("message.conversationId IN (:...ids)", { ids: conversations.map((c) => c.id) })
+        .groupBy("message.conversationId")
+        .getRawMany<{ conversationId: string; count: string }>();
+      for (const row of rawCounts) {
+        messageCountByConversationId.set(row.conversationId, Number(row.count));
+      }
+    }
+
+    const conversationSummaries: AdminFarmerConversationSummary[] = conversations.map((conversation) => ({
+      id: conversation.id,
+      createdAt: conversation.createdAt,
+      language: conversation.language,
+      cropName: conversation.cropId ? cropNameById.get(conversation.cropId) ?? null : null,
+      messageCount: messageCountByConversationId.get(conversation.id) ?? 0,
+    }));
+
+    return { farmer: this.toAdminProfile(farmer), sector, conversations: conversationSummaries };
+  }
+
+  /** Soft delete only — see Farmer.deactivatedAt's doc comment for what this actually blocks. */
+  async deactivate(id: string): Promise<AdminFarmerProfile> {
+    const farmer = await this.getFarmerRecordOrThrow(id);
+    farmer.deactivatedAt = new Date();
+    return this.toAdminProfile(await this.farmerRepository.save(farmer));
+  }
+
+  async reactivate(id: string): Promise<AdminFarmerProfile> {
+    const farmer = await this.getFarmerRecordOrThrow(id);
+    farmer.deactivatedAt = null;
+    return this.toAdminProfile(await this.farmerRepository.save(farmer));
   }
 }

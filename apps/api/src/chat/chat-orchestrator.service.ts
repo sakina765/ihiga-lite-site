@@ -21,6 +21,7 @@ import { parseIsoDateStringLocal } from "../common/date.util";
 import { extractKeywords } from "./extract-keywords";
 import { ChatResponse, ConversationHistoryResponse, HandleMessageParams, HandlePhotoMessageParams } from "./chat.types";
 import { Crop } from "../crops/entities/crop.entity";
+import { MessageType } from "./entities/message.entity";
 
 const HISTORY_LIMIT = 8;
 const MAX_FACTS = 6;
@@ -32,6 +33,16 @@ const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "A
 // translated chip would need translated matching too, and chip taps are
 // exact-string round-trips anyway, not something a farmer types by hand.
 const DECLINE_CHIP_TEXT = "No, that's not right";
+
+// Shown instead of a normal Groq-backed reply once an admin has deactivated a
+// farmer's account (see Farmer.deactivatedAt's doc comment) — real
+// anti-abuse/cost-control teeth, not just a label the admin panel shows to
+// itself, so this is checked BEFORE any Groq/Whisper/vision call is made.
+const DEACTIVATED_ACCOUNT_MESSAGES: Record<ChatLanguage, string> = {
+  en: "This account has been deactivated. Please contact support if you believe this is a mistake.",
+  rw: "Iyi konti yahagaritswe. Nyamuneka vugana n'ubufasha niba ubona ari amakosa.",
+  fr: "Ce compte a été désactivé. Veuillez contacter le support si vous pensez qu'il s'agit d'une erreur.",
+};
 
 function formatPlantingDateForChip(isoDate: string): string {
   const date = parseIsoDateStringLocal(isoDate, "plantingDate");
@@ -76,6 +87,15 @@ export class ChatOrchestratorService {
   ) {}
 
   async handleMessage(params: HandleMessageParams): Promise<ChatResponse> {
+    // Checked before anything else, including the pending-confirmation path
+    // below — a deactivated farmer can't confirm/decline crop tracking either,
+    // and this must never reach Groq (the whole point is stopping further
+    // usage/cost for this account).
+    const farmer = await this.farmersService.getById(params.farmerId);
+    if (farmer?.deactivatedAt) {
+      return this.handleDeactivatedFarmerMessage(params.conversationId, params.farmerId, params.message, params.messageType ?? "text", farmer);
+    }
+
     // A pending crop-tracking proposal from the PREVIOUS turn takes priority
     // over the normal flow: this message either confirms it (exact chip-text
     // match) or doesn't (decline chip, or literally anything else the farmer
@@ -125,7 +145,11 @@ export class ChatOrchestratorService {
       farmerDistrictKnown,
     });
 
-    await this.persistBotReply(conversation.id, structuredReply.replyText);
+    await this.persistBotReply(
+      conversation.id,
+      structuredReply.replyText,
+      relevantFacts.map((fact) => fact.id),
+    );
 
     const pendingProposal = await this.maybeProposeCropTracking(conversation, structuredReply);
 
@@ -139,6 +163,11 @@ export class ChatOrchestratorService {
    * persistence pattern via the shared private helpers below.
    */
   async handlePhotoMessage(params: HandlePhotoMessageParams): Promise<ChatResponse> {
+    const farmer = await this.farmersService.getById(params.farmerId);
+    if (farmer?.deactivatedAt) {
+      return this.handleDeactivatedFarmerMessage(params.conversationId, params.farmerId, params.caption ?? "[Photo shared]", "photo", farmer);
+    }
+
     const { conversation, season, cropStage, weather, seasonalCrops, farmerDistrictKnown } = await this.prepareTurnContext({
       conversationId: params.conversationId,
       farmerId: params.farmerId,
@@ -170,11 +199,49 @@ export class ChatOrchestratorService {
       farmerDistrictKnown,
     });
 
-    await this.persistBotReply(conversation.id, structuredReply.replyText);
+    await this.persistBotReply(
+      conversation.id,
+      structuredReply.replyText,
+      relevantFacts.map((fact) => fact.id),
+    );
 
     const pendingProposal = await this.maybeProposeCropTracking(conversation, structuredReply);
 
     return this.toChatResponse(conversation, season, cropStage, structuredReply, pendingProposal);
+  }
+
+  /**
+   * Persists the farmer's message (so the admin conversation viewer shows
+   * exactly what was sent, same as any other turn) and a canned deactivation
+   * notice in place of a real reply — no Groq/Whisper/vision call is ever
+   * made for a deactivated account. Reuses loadOrCreateConversation so this
+   * behaves identically to a normal turn from the client's point of view
+   * (conversationId is still returned, history is still resumable), just
+   * with a fixed, non-AI reply.
+   */
+  private async handleDeactivatedFarmerMessage(
+    conversationId: string | undefined,
+    farmerId: string,
+    message: string,
+    messageType: MessageType,
+    farmer: Farmer,
+  ): Promise<ChatResponse> {
+    let conversation = await this.loadOrCreateConversation(conversationId, farmerId);
+    conversation.farmerId = farmerId;
+    conversation = await this.conversationRepository.save(conversation);
+
+    await this.messageRepository.save(
+      this.messageRepository.create({ conversationId: conversation.id, role: "user", type: messageType, text: message }),
+    );
+
+    const language = farmer.preferredLanguage ?? conversation.language ?? "en";
+    const replyText = DEACTIVATED_ACCOUNT_MESSAGES[language] ?? DEACTIVATED_ACCOUNT_MESSAGES.en;
+    await this.persistBotReply(conversation.id, replyText);
+
+    const season = await this.seasonService.getCurrentSeason();
+    const cropStage = await this.resolveCropStage(conversation);
+
+    return this.toChatResponse(conversation, season, cropStage, { replyText, suggestedChips: [] });
   }
 
   /**
@@ -216,7 +283,7 @@ export class ChatOrchestratorService {
       order: { createdAt: "ASC" },
     });
 
-    const season = this.seasonService.getCurrentSeason();
+    const season = await this.seasonService.getCurrentSeason();
     const cropStage = await this.resolveCropStage(conversation);
 
     return {
@@ -272,29 +339,29 @@ export class ChatOrchestratorService {
     }
     conversation = await this.conversationRepository.save(conversation);
 
-    const season = this.seasonService.getCurrentSeason();
+    const season = await this.seasonService.getCurrentSeason();
     const cropStage = await this.resolveCropStage(conversation);
     const weather = await this.resolveWeather(farmer);
-    const seasonalCrops = this.resolveSeasonalCrops(farmer);
+    const seasonalCrops = await this.resolveSeasonalCrops(farmer);
 
     return { conversation, season, cropStage, weather, seasonalCrops, farmerDistrictKnown: !!farmer?.district };
   }
 
   /** Absent when the farmer isn't found, hasn't given a district yet, or the district doesn't map to a known province. */
-  private resolveSeasonalCrops(farmer: Farmer | null): string[] | undefined {
+  private async resolveSeasonalCrops(farmer: Farmer | null): Promise<string[] | undefined> {
     if (!farmer?.district) {
       return undefined;
     }
-    const { crops } = this.cropSuggestionsService.getSuggestions(farmer.district);
+    const { crops } = await this.cropSuggestionsService.getSuggestions(farmer.district);
     if (crops.length === 0) {
       return undefined;
     }
     return crops.map((c) => (c.localName ? `${c.name} (${c.localName})` : c.name));
   }
 
-  private async persistBotReply(conversationId: string, replyText: string): Promise<void> {
+  private async persistBotReply(conversationId: string, replyText: string, retrievedFactIds: string[] | null = null): Promise<void> {
     await this.messageRepository.save(
-      this.messageRepository.create({ conversationId, role: "bot", type: "text", text: replyText }),
+      this.messageRepository.create({ conversationId, role: "bot", type: "text", text: replyText, retrievedFactIds }),
     );
   }
 
@@ -432,7 +499,7 @@ export class ChatOrchestratorService {
       this.messageRepository.create({ conversationId: savedConversation.id, role: "user", type: "text", text: message }),
     );
 
-    const season = this.seasonService.getCurrentSeason();
+    const season = await this.seasonService.getCurrentSeason();
     const cropStage = await this.resolveCropStage(savedConversation);
     const replyText = this.buildTrackingConfirmedReplyText(crop, pendingDate, savedConversation.language ?? "en");
 

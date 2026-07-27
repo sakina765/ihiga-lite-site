@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { ConfigService } from "@nestjs/config";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
@@ -10,6 +11,11 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.use(helmet());
+  // Only ever populates req.cookies with the admin session cookie
+  // (ihiga_admin_token, set by AdminAuthController) — the farmer-facing app
+  // sends no cookies at all (farmerId travels as a request body/query field,
+  // unchanged by this addition), so this has no effect on any existing route.
+  app.use(cookieParser());
 
   // Render sits as exactly one reverse proxy in front of this API — trusting
   // ONLY that one hop (not `true`, which would trust the entire chain) means
@@ -24,8 +30,13 @@ async function bootstrap() {
 
   // Locked to the single configured frontend origin — never a wildcard — since
   // this API is called by one known web client, not a public third-party API.
+  // credentials: true is required for the admin session cookie to travel on
+  // cross-origin requests (the deployed frontend and API are on different
+  // sites) — it does not loosen the origin allowlist above, and the
+  // farmer-facing flow (which sends no cookies) is unaffected either way.
   app.enableCors({
     origin: configService.get<string>("FRONTEND_URL") ?? "http://localhost:3000",
+    credentials: true,
   });
 
   const port = Number(process.env.PORT) || 3001;

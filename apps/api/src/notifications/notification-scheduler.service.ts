@@ -4,11 +4,13 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Not, Repository } from "typeorm";
 import { Farmer } from "../farmers/entities/farmer.entity";
 import { Conversation } from "../chat/entities/conversation.entity";
+import { NotificationLog } from "./entities/notification-log.entity";
 import { CropsService } from "../crops/crops.service";
 import { WeatherService } from "../weather/weather.service";
 import { SmsService } from "./sms.service";
 import { parseIsoDateStringLocal } from "../common/date.util";
 import { ChatLanguage } from "../ai/types";
+import { SmsSendOutcome } from "./sms.service";
 
 export type NotificationOutcome = "sent" | "skipped" | "failed";
 
@@ -16,6 +18,21 @@ export interface NotificationResult {
   farmerId: string;
   outcome: NotificationOutcome;
   reason: string;
+}
+
+export interface AdminAlertLogItem {
+  id: string;
+  farmerId: string;
+  farmerPhoneNumber: string;
+  stageChanged: boolean;
+  weatherRisk: boolean;
+  message: string;
+  outcome: SmsSendOutcome;
+  providerStatus: string | null;
+  providerStatusCode: number | null;
+  providerCost: string | null;
+  errorMessage: string | null;
+  createdAt: Date;
 }
 
 const STAGE_CHANGE_MESSAGES: Record<ChatLanguage, (stageName: string, task: string) => string> = {
@@ -42,6 +59,7 @@ export class NotificationSchedulerService {
   constructor(
     @InjectRepository(Farmer) private readonly farmerRepository: Repository<Farmer>,
     @InjectRepository(Conversation) private readonly conversationRepository: Repository<Conversation>,
+    @InjectRepository(NotificationLog) private readonly notificationLogRepository: Repository<NotificationLog>,
     private readonly cropsService: CropsService,
     private readonly weatherService: WeatherService,
     private readonly smsService: SmsService,
@@ -73,6 +91,10 @@ export class NotificationSchedulerService {
   }
 
   private async evaluateFarmer(farmer: Farmer): Promise<NotificationResult> {
+    if (farmer.deactivatedAt) {
+      return { farmerId: farmer.id, outcome: "skipped", reason: "account deactivated" };
+    }
+
     const conversation = await this.conversationRepository.findOne({
       where: { farmerId: farmer.id, cropId: Not(IsNull()), plantingDate: Not(IsNull()) },
       order: { createdAt: "DESC" },
@@ -124,13 +146,28 @@ export class NotificationSchedulerService {
     }
     const message = parts.join(" ");
 
-    // SmsService.sendSms() never throws (see its own docstring), so we can't
-    // distinguish actual delivery success from failure here. We mark the
-    // alert as notified regardless of the outcome once we've attempted it —
+    // SmsService.sendSms() never throws (see its own docstring) but now
+    // returns a real delivery-status result (Phase 6 — this comment used to
+    // say a future iteration would add this). We still mark the alert as
+    // notified regardless of that outcome once we've attempted it —
     // accepting that a transient send failure means this particular alert
-    // won't be retried tomorrow. A future iteration could have SmsService
-    // return a delivery-status result if finer-grained retry logic is needed.
-    await this.smsService.sendSms(farmer.phoneNumber, message);
+    // won't be retried tomorrow, same policy as before.
+    const sendResult = await this.smsService.sendSms(farmer.phoneNumber, message);
+
+    await this.notificationLogRepository.save(
+      this.notificationLogRepository.create({
+        farmerId: farmer.id,
+        stageChanged,
+        weatherRisk,
+        message,
+        outcome: sendResult.outcome,
+        providerStatus: sendResult.providerStatus,
+        providerStatusCode: sendResult.providerStatusCode,
+        providerCost: sendResult.providerCost,
+        providerMessageId: sendResult.providerMessageId,
+        errorMessage: sendResult.errorMessage,
+      }),
+    );
 
     if (stageChanged && newStageId) {
       farmer.lastNotifiedStageId = newStageId;
@@ -141,8 +178,46 @@ export class NotificationSchedulerService {
     await this.farmerRepository.save(farmer);
 
     this.logger.log(
-      `evaluateFarmer(${farmer.id}): SMS attempt dispatched — stageChanged=${stageChanged} weatherRisk=${weatherRisk}`,
+      `evaluateFarmer(${farmer.id}): SMS attempt dispatched — stageChanged=${stageChanged} weatherRisk=${weatherRisk} outcome=${sendResult.outcome}`,
     );
     return { farmerId: farmer.id, outcome: "sent", reason: message };
+  }
+
+  /**
+   * Admin-panel read view (Phase 6) — every genuinely triggered alert, most
+   * recent first, with the real Africa's Talking provider fields so the UI
+   * can show delivery status honestly rather than implying success means a
+   * real phone received it (see SmsService's own doc comment on the sandbox
+   * limitation).
+   */
+  async adminListAlerts(params: { page: number; pageSize: number }): Promise<{ items: AdminAlertLogItem[]; total: number }> {
+    const qb = this.notificationLogRepository
+      .createQueryBuilder("log")
+      .leftJoinAndSelect("log.farmer", "farmer")
+      .orderBy("log.createdAt", "DESC");
+
+    const total = await qb.getCount();
+    const logs = await qb
+      .skip((params.page - 1) * params.pageSize)
+      .take(params.pageSize)
+      .getMany();
+
+    return {
+      total,
+      items: logs.map((log) => ({
+        id: log.id,
+        farmerId: log.farmerId,
+        farmerPhoneNumber: log.farmer?.phoneNumber ?? "",
+        stageChanged: log.stageChanged,
+        weatherRisk: log.weatherRisk,
+        message: log.message,
+        outcome: log.outcome,
+        providerStatus: log.providerStatus,
+        providerStatusCode: log.providerStatusCode,
+        providerCost: log.providerCost,
+        errorMessage: log.errorMessage,
+        createdAt: log.createdAt,
+      })),
+    };
   }
 }

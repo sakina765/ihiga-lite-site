@@ -36,6 +36,27 @@ export class Message {
   @Column({ type: "text" })
   text: string;
 
+  /**
+   * Which KnowledgeFact rows were actually retrieved and handed to Groq for
+   * THIS reply (see ChatOrchestratorService.persistBotReply) — lets the
+   * admin conversation viewer (Phase 5) show whether a reply was genuinely
+   * grounded, not just plausible-sounding. Only ever set for bot messages
+   * produced by a real Groq call; null for user messages, the deterministic
+   * tracking-confirmed reply, and the deactivated-account notice (none of
+   * those do a knowledge search). Null also means "not recorded" for any
+   * message written before this column existed — distinct from an empty
+   * array, which means "recorded, and zero facts were retrieved".
+   */
+  @Column({ name: "retrieved_fact_ids", type: "uuid", array: true, nullable: true })
+  retrievedFactIds: string[] | null;
+
+  /** Admin-only bookmark ("revisit this reply later") — see AdminConversationsService.flagMessage/unflagMessage. Not farmer-facing. */
+  @Column({ type: "boolean", default: false })
+  flagged: boolean;
+
+  @Column({ name: "flagged_at", type: "timestamp", nullable: true })
+  flaggedAt: Date | null;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 }

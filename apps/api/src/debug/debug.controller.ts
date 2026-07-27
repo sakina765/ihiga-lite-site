@@ -33,7 +33,7 @@ export class DebugController {
   }
 
   @Get("season")
-  getSeason(@Query("date") date?: string) {
+  async getSeason(@Query("date") date?: string) {
     const parsed = date ? parseIsoDateStringLocal(date, "date") : undefined;
     return this.seasonService.getCurrentSeason(parsed);
   }

@@ -37,9 +37,17 @@ describe("SmsService", () => {
   it("skips sending and never logs the raw phone number or message when credentials are missing", async () => {
     const service = makeService(false);
 
-    await service.sendSms("+250788123456", "secret farmer message");
+    const result = await service.sendSms("+250788123456", "secret farmer message");
 
     expect(mockSend).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      outcome: "not_configured",
+      providerStatus: null,
+      providerStatusCode: null,
+      providerCost: null,
+      providerMessageId: null,
+      errorMessage: null,
+    });
     const loggedText = warnSpy.mock.calls[0][0] as string;
     expect(loggedText).not.toContain("+250788123456");
     expect(loggedText).not.toContain("secret farmer message");
@@ -55,9 +63,19 @@ describe("SmsService", () => {
       },
     });
 
-    await service.sendSms("+250788123456", "secret farmer message");
+    const result = await service.sendSms("+250788123456", "secret farmer message");
 
     expect(mockSend).toHaveBeenCalledWith({ to: ["+250788123456"], message: "secret farmer message" });
+    // The returned result is what the admin alerts log (Phase 6) persists —
+    // must carry the real provider fields, not just log them.
+    expect(result).toEqual({
+      outcome: "sent",
+      providerStatus: "Success",
+      providerStatusCode: 101,
+      providerCost: "RWF 14.0000",
+      providerMessageId: "abc",
+      errorMessage: null,
+    });
     const loggedText = logSpy.mock.calls[0][0] as string;
     expect(loggedText).not.toContain("+250788123456");
     expect(loggedText).not.toContain("secret farmer message");
@@ -69,8 +87,10 @@ describe("SmsService", () => {
     const service = makeService(true);
     mockSend.mockRejectedValue(new Error("network error"));
 
-    await expect(service.sendSms("+250788123456", "secret farmer message")).resolves.toBeUndefined();
+    const result = await service.sendSms("+250788123456", "secret farmer message");
 
+    expect(result.outcome).toBe("failed");
+    expect(result.errorMessage).toBe("network error");
     const loggedText = errorSpy.mock.calls[0][0] as string;
     expect(loggedText).not.toContain("+250788123456");
     expect(loggedText).toContain("3456");

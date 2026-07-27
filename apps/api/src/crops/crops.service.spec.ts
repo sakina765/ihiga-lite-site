@@ -25,6 +25,7 @@ function makeStage(overrides: Partial<CropStage>): CropStage {
 describe("CropsService", () => {
   let cropRepository: { findOne: jest.Mock; find: jest.Mock };
   let cropStageRepository: Record<string, jest.Mock>;
+  let conversationRepository: Record<string, jest.Mock>;
   let service: CropsService;
 
   const stages: CropStage[] = [
@@ -45,7 +46,8 @@ describe("CropsService", () => {
   beforeEach(() => {
     cropRepository = { findOne: jest.fn(), find: jest.fn() };
     cropStageRepository = {};
-    service = new CropsService(cropRepository as any, cropStageRepository as any);
+    conversationRepository = { count: jest.fn() };
+    service = new CropsService(cropRepository as any, cropStageRepository as any, conversationRepository as any);
   });
 
   describe("getCurrentStage", () => {

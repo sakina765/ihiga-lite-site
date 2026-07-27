@@ -39,6 +39,7 @@ function makeWeather(overrides: Partial<Record<string, unknown>> = {}) {
 describe("NotificationSchedulerService", () => {
   let farmerRepository: any;
   let conversationRepository: any;
+  let notificationLogRepository: any;
   let cropsService: any;
   let weatherService: any;
   let smsService: any;
@@ -50,11 +51,31 @@ describe("NotificationSchedulerService", () => {
       save: jest.fn(async (entity: any) => entity),
     };
     conversationRepository = { findOne: jest.fn() };
+    notificationLogRepository = {
+      create: jest.fn((data: any) => data),
+      save: jest.fn(async (entity: any) => entity),
+    };
     cropsService = { getCurrentStage: jest.fn() };
     weatherService = { getForecast: jest.fn() };
-    smsService = { sendSms: jest.fn(async () => undefined) };
+    smsService = {
+      sendSms: jest.fn(async () => ({
+        outcome: "sent",
+        providerStatus: "Success",
+        providerStatusCode: 101,
+        providerCost: "RWF 14.0000",
+        providerMessageId: "abc",
+        errorMessage: null,
+      })),
+    };
 
-    service = new NotificationSchedulerService(farmerRepository, conversationRepository, cropsService, weatherService, smsService);
+    service = new NotificationSchedulerService(
+      farmerRepository,
+      conversationRepository,
+      notificationLogRepository,
+      cropsService,
+      weatherService,
+      smsService,
+    );
   });
 
   it("skips a farmer with no active crop/planting date on record", async () => {
@@ -65,6 +86,17 @@ describe("NotificationSchedulerService", () => {
     const results = await service.runDailyNotifications();
 
     expect(results).toEqual([{ farmerId: "farmer-1", outcome: "skipped", reason: expect.stringContaining("no active crop") }]);
+    expect(smsService.sendSms).not.toHaveBeenCalled();
+  });
+
+  it("skips a deactivated farmer entirely — never even checks their crop stage or weather", async () => {
+    const farmer = makeFarmer({ lastNotifiedStageId: "old-stage-id", deactivatedAt: new Date("2026-01-01") });
+    farmerRepository.find.mockResolvedValue([farmer]);
+
+    const results = await service.runDailyNotifications();
+
+    expect(results).toEqual([{ farmerId: "farmer-1", outcome: "skipped", reason: expect.stringContaining("deactivated") }]);
+    expect(conversationRepository.findOne).not.toHaveBeenCalled();
     expect(smsService.sendSms).not.toHaveBeenCalled();
   });
 
@@ -168,5 +200,62 @@ describe("NotificationSchedulerService", () => {
     const results = await service.runDailyNotifications();
 
     expect(results[0].outcome).toBe("failed");
+  });
+
+  describe("alerts log (Phase 6)", () => {
+    it("persists a NotificationLog row with the real provider fields when an alert is genuinely triggered", async () => {
+      const farmer = makeFarmer({ lastNotifiedStageId: "old-stage-id" });
+      farmerRepository.find.mockResolvedValue([farmer]);
+      conversationRepository.findOne.mockResolvedValue({ cropId: "maize-id", plantingDate: "2026-05-01" });
+      cropsService.getCurrentStage.mockResolvedValue(makeStage({ id: "new-stage-id" }));
+      weatherService.getForecast.mockResolvedValue(makeWeather());
+
+      await service.runDailyNotifications();
+
+      expect(notificationLogRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          farmerId: "farmer-1",
+          stageChanged: true,
+          weatherRisk: false,
+          outcome: "sent",
+          providerStatus: "Success",
+          providerStatusCode: 101,
+          providerCost: "RWF 14.0000",
+        }),
+      );
+      expect(notificationLogRepository.save).toHaveBeenCalled();
+    });
+
+    it("does NOT write a log row for the routine 'no active crop' skip — only genuinely triggered alerts are logged", async () => {
+      const farmer = makeFarmer();
+      farmerRepository.find.mockResolvedValue([farmer]);
+      conversationRepository.findOne.mockResolvedValue(null);
+
+      await service.runDailyNotifications();
+
+      expect(notificationLogRepository.create).not.toHaveBeenCalled();
+    });
+
+    it("records outcome='failed' and the error message when SmsService itself reports a failure", async () => {
+      const farmer = makeFarmer({ lastNotifiedStageId: "old-stage-id" });
+      farmerRepository.find.mockResolvedValue([farmer]);
+      conversationRepository.findOne.mockResolvedValue({ cropId: "maize-id", plantingDate: "2026-05-01" });
+      cropsService.getCurrentStage.mockResolvedValue(makeStage({ id: "new-stage-id" }));
+      weatherService.getForecast.mockResolvedValue(makeWeather());
+      smsService.sendSms.mockResolvedValue({
+        outcome: "failed",
+        providerStatus: null,
+        providerStatusCode: null,
+        providerCost: null,
+        providerMessageId: null,
+        errorMessage: "network error",
+      });
+
+      await service.runDailyNotifications();
+
+      expect(notificationLogRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "failed", errorMessage: "network error" }),
+      );
+    });
   });
 });

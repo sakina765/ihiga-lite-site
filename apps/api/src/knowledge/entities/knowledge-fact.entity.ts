@@ -27,4 +27,18 @@ export class KnowledgeFact {
 
   @Column({ type: "text", array: true, default: () => "'{}'" })
   tags: string[];
+
+  /**
+   * Distinguishes seed-time placeholder content (see knowledge.seed-data.ts's
+   * SOURCE constant — "RICA (placeholder — replace with validated source)")
+   * from facts an admin has actually checked against a real, validated
+   * source. Defaults false, including for every existing seeded row, so
+   * nothing is silently treated as verified just because this column now
+   * exists.
+   */
+  @Column({ type: "boolean", default: false })
+  reviewed: boolean;
+
+  @Column({ name: "reviewed_at", type: "timestamp", nullable: true })
+  reviewedAt: Date | null;
 }
