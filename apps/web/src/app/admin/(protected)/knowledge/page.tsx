@@ -162,7 +162,7 @@ export default function AdminKnowledgePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-ink">Knowledge base</h1>
           <p className="mt-1 text-sm text-ink-soft">
@@ -173,7 +173,7 @@ export default function AdminKnowledgePage() {
         {formMode === "closed" && (
           <button
             onClick={openCreateForm}
-            className="rounded-xl bg-sage px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sage-dark"
+            className="rounded-xl bg-sage px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sage-dark sm:self-start"
           >
             + New fact
           </button>
@@ -194,12 +194,12 @@ export default function AdminKnowledgePage() {
       )}
 
       <div className="flex flex-wrap items-end gap-4 rounded-2xl border border-soil/10 bg-white p-4">
-        <label className="flex flex-col gap-1.5">
+        <label className="flex w-full flex-col gap-1.5 sm:w-auto">
           <span className="text-xs font-medium text-ink-soft">Crop</span>
           <select
             value={filterCropId}
             onChange={(event) => setFilterCropId(event.target.value)}
-            className="rounded-lg border border-soil/15 bg-parchment/60 px-3 py-1.5 text-sm text-ink"
+            className="w-full rounded-lg border border-soil/15 bg-parchment/60 px-3 py-1.5 text-sm text-ink sm:w-auto"
           >
             <option value="">All crops</option>
             {crops.map((crop) => (
@@ -210,23 +210,23 @@ export default function AdminKnowledgePage() {
           </select>
         </label>
 
-        <label className="flex flex-col gap-1.5">
+        <label className="flex w-full flex-col gap-1.5 sm:w-auto">
           <span className="text-xs font-medium text-ink-soft">Topic</span>
           <input
             type="text"
             value={filterTopic}
             onChange={(event) => setFilterTopic(event.target.value)}
             placeholder="exact topic, e.g. fertilizer"
-            className="rounded-lg border border-soil/15 bg-parchment/60 px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint"
+            className="w-full rounded-lg border border-soil/15 bg-parchment/60 px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint sm:w-auto"
           />
         </label>
 
-        <label className="flex flex-col gap-1.5">
+        <label className="flex w-full flex-col gap-1.5 sm:w-auto">
           <span className="text-xs font-medium text-ink-soft">Status</span>
           <select
             value={filterReviewed}
             onChange={(event) => setFilterReviewed(event.target.value as ReviewedFilter)}
-            className="rounded-lg border border-soil/15 bg-parchment/60 px-3 py-1.5 text-sm text-ink"
+            className="w-full rounded-lg border border-soil/15 bg-parchment/60 px-3 py-1.5 text-sm text-ink sm:w-auto"
           >
             <option value="all">All</option>
             <option value="false">Unreviewed only</option>
@@ -237,7 +237,50 @@ export default function AdminKnowledgePage() {
 
       {listError && <p className="text-sm text-clay">{listError}</p>}
 
-      <div className="overflow-x-auto rounded-2xl border border-soil/10 bg-white">
+      {/* Mobile: one card per fact — a horizontally-scrolling 5-column table
+          is not a reasonable phone experience. Desktop keeps the table below. */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {isLoading && <p className="py-6 text-center text-sm text-ink-faint">Loading…</p>}
+        {!isLoading && facts.length === 0 && (
+          <p className="py-6 text-center text-sm text-ink-faint">No knowledge facts match these filters.</p>
+        )}
+        {!isLoading &&
+          facts.map((fact) => (
+            <div key={fact.id} className="rounded-2xl border border-soil/10 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-ink">{fact.topic}</div>
+                  <div className="text-xs text-ink-faint">{fact.crop ? fact.crop.name : "General (no crop)"}</div>
+                </div>
+                {fact.reviewed ? (
+                  <span className="shrink-0 rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage-dark">Reviewed</span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Placeholder</span>
+                )}
+              </div>
+              <p className="mt-2 line-clamp-3 text-sm text-ink-soft">{fact.factText}</p>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-soil/5 pt-3 text-sm">
+                <button onClick={() => openEditForm(fact)} className="font-medium text-ink-soft hover:text-ink">
+                  Edit
+                </button>
+                {!fact.reviewed && (
+                  <button
+                    onClick={() => handleMarkReviewed(fact)}
+                    disabled={reviewingId === fact.id}
+                    className="font-medium text-sage-dark hover:opacity-80 disabled:opacity-50"
+                  >
+                    {reviewingId === fact.id ? "Marking…" : "Mark reviewed"}
+                  </button>
+                )}
+                <button onClick={() => setDeleteTarget(fact)} className="font-medium text-clay hover:opacity-80">
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl border border-soil/10 bg-white md:block">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
             <tr>

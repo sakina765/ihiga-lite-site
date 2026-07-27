@@ -65,7 +65,97 @@ export function CropStagesEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="overflow-x-auto rounded-xl border border-soil/10">
+      {/* Mobile: one card per stage — a 7-column editable table has no
+          reasonable phone layout, even with horizontal scroll. */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {rows.map((row, index) => (
+          <div key={index} className="rounded-xl border border-soil/10 bg-parchment/30 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium uppercase tracking-wide text-ink-faint">Stage {index + 1}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveRow(index, -1)}
+                  disabled={index === 0}
+                  aria-label="Move stage earlier"
+                  className="rounded border border-soil/15 px-2 py-1 text-ink-soft disabled:opacity-30"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveRow(index, 1)}
+                  disabled={index === rows.length - 1}
+                  aria-label="Move stage later"
+                  className="rounded border border-soil/15 px-2 py-1 text-ink-soft disabled:opacity-30"
+                >
+                  ↓
+                </button>
+                <button type="button" onClick={() => removeRow(index)} className="text-sm font-medium text-clay hover:opacity-80">
+                  Remove
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-ink-soft">Stage name</span>
+                <input
+                  type="text"
+                  value={row.name}
+                  onChange={(event) => updateRow(index, { name: event.target.value })}
+                  className="w-full rounded-lg border border-soil/15 bg-white px-2 py-1.5 text-sm text-ink"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-ink-soft">Week start</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={row.weekStart}
+                    onChange={(event) => updateRow(index, { weekStart: Number(event.target.value) })}
+                    className="w-full rounded-lg border border-soil/15 bg-white px-2 py-1.5 text-sm text-ink"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-ink-soft">Week end</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={row.weekEnd}
+                    onChange={(event) => updateRow(index, { weekEnd: Number(event.target.value) })}
+                    className="w-full rounded-lg border border-soil/15 bg-white px-2 py-1.5 text-sm text-ink"
+                  />
+                </label>
+              </div>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-ink-soft">Task (English)</span>
+                <textarea
+                  rows={2}
+                  value={row.taskDescription}
+                  onChange={(event) => updateRow(index, { taskDescription: event.target.value })}
+                  className="w-full rounded-lg border border-soil/15 bg-white px-2 py-1.5 text-sm text-ink"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-ink-soft">Task (Kinyarwanda)</span>
+                <textarea
+                  rows={2}
+                  value={row.taskDescriptionRw}
+                  onChange={(event) => updateRow(index, { taskDescriptionRw: event.target.value })}
+                  className="w-full rounded-lg border border-soil/15 bg-white px-2 py-1.5 text-sm text-ink"
+                />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-soil/10 md:block">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
             <tr>

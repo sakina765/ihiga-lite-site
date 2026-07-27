@@ -57,10 +57,10 @@ export function SectorForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl border border-soil/10 bg-white p-6">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl border border-soil/10 bg-white p-4 sm:p-6">
       <h2 className="text-base font-semibold text-ink">{sector ? "Edit sector" : "New sector"}</h2>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-ink">District</span>
           <input
@@ -93,7 +93,7 @@ export function SectorForm({
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-ink">Latitude</span>
           <input

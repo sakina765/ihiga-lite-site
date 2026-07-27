@@ -40,8 +40,8 @@ export function AdminMessageBubble({
         <div
           className={
             isUser
-              ? "max-w-[70%] break-words rounded-2xl rounded-br-sm bg-sage-dark px-3 py-2 text-sm text-parchment"
-              : "max-w-[70%] break-words rounded-2xl rounded-bl-sm border border-parchment-2 bg-white px-3 py-2 text-sm text-ink"
+              ? "max-w-[85%] sm:max-w-[70%] break-words rounded-2xl rounded-br-sm bg-sage-dark px-3 py-2 text-sm text-parchment"
+              : "max-w-[85%] sm:max-w-[70%] break-words rounded-2xl rounded-bl-sm border border-parchment-2 bg-white px-3 py-2 text-sm text-ink"
           }
         >
           {message.type === "voice" && (
@@ -75,7 +75,7 @@ export function AdminMessageBubble({
       <span className="mt-1 text-[11px] text-ink-soft">{formatTime(message.createdAt)}</span>
 
       {!isUser && (
-        <div className="mt-1 max-w-[70%]">
+        <div className="mt-1 max-w-[85%] sm:max-w-[70%]">
           {message.retrievedFacts === null ? (
             <span className="text-[11px] italic text-ink-faint">Grounding not recorded for this reply</span>
           ) : message.retrievedFacts.length === 0 ? (

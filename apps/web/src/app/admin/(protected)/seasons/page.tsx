@@ -79,9 +79,9 @@ export default function AdminSeasonsPage() {
 
       <div className="flex flex-col gap-4">
         {boundaries.map((boundary) => (
-          <div key={boundary.code} className="rounded-2xl border border-soil/10 bg-white p-6">
+          <div key={boundary.code} className="rounded-2xl border border-soil/10 bg-white p-4 sm:p-6">
             <h2 className="mb-4 text-base font-semibold text-ink">Season {boundary.code}</h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium text-ink">Local name</span>
                 <input
@@ -102,7 +102,7 @@ export default function AdminSeasonsPage() {
               </label>
             </div>
 
-            <div className="mt-4 grid grid-cols-4 gap-4">
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium text-ink-soft">Start month</span>
                 <input

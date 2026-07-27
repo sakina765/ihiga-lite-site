@@ -90,7 +90,7 @@ export default function AdminFarmerDetailPage() {
       {toast && <div className="rounded-xl bg-sage/15 px-4 py-2.5 text-sm font-medium text-sage-dark">{toast}</div>}
       {error && <p className="text-sm text-clay">{error}</p>}
 
-      <div className="rounded-2xl border border-soil/10 bg-white p-6">
+      <div className="rounded-2xl border border-soil/10 bg-white p-4 sm:p-6">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-lg font-semibold text-ink">
@@ -105,7 +105,7 @@ export default function AdminFarmerDetailPage() {
           )}
         </div>
 
-        <dl className="mt-6 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
+        <dl className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 md:grid-cols-3">
           <div>
             <dt className="text-xs font-medium text-ink-faint">Region (district)</dt>
             <dd className="mt-0.5 text-ink">{farmer.district ?? "—"}</dd>
@@ -152,45 +152,68 @@ export default function AdminFarmerDetailPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-soil/10 bg-white p-6">
+      <div className="rounded-2xl border border-soil/10 bg-white p-4 sm:p-6">
         <h2 className="mb-4 text-base font-semibold text-ink">Conversations</h2>
         <p className="mb-4 text-xs text-ink-faint">Click a conversation to view its full message thread.</p>
         {conversations.length === 0 ? (
           <p className="text-sm text-ink-faint">No conversations yet.</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-soil/10">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Started</th>
-                  <th className="px-3 py-2 font-medium">Language</th>
-                  <th className="px-3 py-2 font-medium">Crop</th>
-                  <th className="px-3 py-2 font-medium">Messages</th>
-                  <th className="px-3 py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {conversations.map((conversation) => (
-                  <tr key={conversation.id} className="border-b border-soil/5 last:border-0 hover:bg-parchment/40">
-                    <td className="px-3 py-2 text-ink-soft">{formatDateTime(conversation.createdAt)}</td>
-                    <td className="px-3 py-2 text-ink-soft">
-                      {conversation.language ? LANGUAGE_LABELS[conversation.language] ?? conversation.language : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-ink-soft">{conversation.cropName ?? "—"}</td>
-                    <td className="px-3 py-2 text-ink-soft">{conversation.messageCount}</td>
-                    <td className="px-3 py-2 text-right">
-                      <Link
-                        href={`/admin/conversations/${conversation.id}`}
-                        className="text-sm font-medium text-sage-dark hover:opacity-80"
-                      >
-                        View
-                      </Link>
-                    </td>
+          <>
+            {/* Mobile: one card per conversation, full row tappable. */}
+            <div className="flex flex-col gap-2 md:hidden">
+              {conversations.map((conversation) => (
+                <Link
+                  key={conversation.id}
+                  href={`/admin/conversations/${conversation.id}`}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-soil/10 px-3 py-3 hover:bg-parchment/40"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm text-ink">{formatDateTime(conversation.createdAt)}</div>
+                    <div className="mt-0.5 text-xs text-ink-faint">
+                      {conversation.cropName ?? "No crop"} ·{" "}
+                      {conversation.language ? LANGUAGE_LABELS[conversation.language] ?? conversation.language : "—"} ·{" "}
+                      {conversation.messageCount} message{conversation.messageCount === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium text-sage-dark">View</span>
+                </Link>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto rounded-xl border border-soil/10 md:block">
+              <table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Started</th>
+                    <th className="px-3 py-2 font-medium">Language</th>
+                    <th className="px-3 py-2 font-medium">Crop</th>
+                    <th className="px-3 py-2 font-medium">Messages</th>
+                    <th className="px-3 py-2 font-medium" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {conversations.map((conversation) => (
+                    <tr key={conversation.id} className="border-b border-soil/5 last:border-0 hover:bg-parchment/40">
+                      <td className="px-3 py-2 text-ink-soft">{formatDateTime(conversation.createdAt)}</td>
+                      <td className="px-3 py-2 text-ink-soft">
+                        {conversation.language ? LANGUAGE_LABELS[conversation.language] ?? conversation.language : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-ink-soft">{conversation.cropName ?? "—"}</td>
+                      <td className="px-3 py-2 text-ink-soft">{conversation.messageCount}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          href={`/admin/conversations/${conversation.id}`}
+                          className="text-sm font-medium text-sage-dark hover:opacity-80"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

@@ -81,7 +81,40 @@ export default function AdminAlertsPage() {
 
       {error && <p className="text-sm text-clay">{error}</p>}
 
-      <div className="overflow-x-auto rounded-2xl border border-soil/10 bg-white">
+      {/* Mobile: one card per alert. */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {isLoading && <p className="py-6 text-center text-sm text-ink-faint">Loading…</p>}
+        {!isLoading && items.length === 0 && (
+          <p className="py-6 text-center text-sm text-ink-faint">No alerts have been triggered yet.</p>
+        )}
+        {!isLoading &&
+          items.map((alert) => (
+            <div key={alert.id} className="rounded-2xl border border-soil/10 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <MaskedPhoneNumber phoneNumber={alert.farmerPhoneNumber} />
+                <OutcomeBadge alert={alert} />
+              </div>
+              <div className="mt-1.5 text-xs text-ink-faint">
+                {triggerReasonLabel(alert)} · {formatDateTime(alert.createdAt)}
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm text-ink-soft">{alert.message}</p>
+              <div className="mt-2 border-t border-soil/5 pt-2 text-xs text-ink-soft">
+                {alert.outcome === "sent" ? (
+                  <span>
+                    Provider: {alert.providerStatus}
+                    {alert.providerCost ? ` · ${alert.providerCost}` : ""}
+                  </span>
+                ) : alert.outcome === "failed" ? (
+                  <span className="text-clay">{alert.errorMessage ?? "Send failed"}</span>
+                ) : (
+                  <span className="text-ink-faint">Africa&apos;s Talking not configured</span>
+                )}
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl border border-soil/10 bg-white md:block">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
             <tr>
@@ -145,7 +178,7 @@ export default function AdminAlertsPage() {
       </div>
 
       {!isLoading && total > 0 && (
-        <div className="flex items-center justify-between text-sm text-ink-soft">
+        <div className="flex flex-col gap-3 text-sm text-ink-soft sm:flex-row sm:items-center sm:justify-between">
           <span>
             {total} alert{total === 1 ? "" : "s"} · page {page} of {totalPages}
           </span>

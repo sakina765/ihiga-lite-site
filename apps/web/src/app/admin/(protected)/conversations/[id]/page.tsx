@@ -78,7 +78,7 @@ export default function AdminConversationDetailPage() {
 
       {error && <p className="text-sm text-clay">{error}</p>}
 
-      <div className="rounded-2xl border border-soil/10 bg-white p-6">
+      <div className="rounded-2xl border border-soil/10 bg-white p-4 sm:p-6">
         <h1 className="text-lg font-semibold text-ink">Conversation</h1>
         <dl className="mt-3 grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
           <div>
@@ -102,7 +102,7 @@ export default function AdminConversationDetailPage() {
         </dl>
       </div>
 
-      <div className="rounded-2xl border border-soil/10 bg-parchment p-6">
+      <div className="rounded-2xl border border-soil/10 bg-parchment p-4 sm:p-6">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
           {conversation.messages.length === 0 ? (
             <p className="text-sm text-ink-faint">No messages in this conversation.</p>

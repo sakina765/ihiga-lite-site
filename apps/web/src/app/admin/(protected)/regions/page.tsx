@@ -170,7 +170,25 @@ export default function AdminRegionsPage() {
           </p>
         </div>
         {districtsError && <p className="text-sm text-clay">{districtsError}</p>}
-        <div className="overflow-x-auto rounded-2xl border border-soil/10 bg-white">
+
+        {/* Mobile: one row per district, grouped visually by keeping province + district on one line. */}
+        <div className="flex flex-col gap-1 rounded-2xl border border-soil/10 bg-white p-2 md:hidden">
+          {isLoadingDistricts && <p className="px-2 py-3 text-center text-sm text-ink-faint">Loading…</p>}
+          {!isLoadingDistricts &&
+            districts.map((row) => (
+              <div key={row.district} className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="text-ink">{row.district}</div>
+                  <div className="text-xs text-ink-faint">{row.province ?? "—"}</div>
+                </div>
+                <div className="shrink-0 text-right text-xs text-ink-faint">
+                  {row.lat}, {row.lon}
+                </div>
+              </div>
+            ))}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-2xl border border-soil/10 bg-white md:block">
           <table className="w-full min-w-[500px] text-left text-sm">
             <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
               <tr>
@@ -203,7 +221,7 @@ export default function AdminRegionsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-ink">Sectors</h2>
             <p className="text-xs text-ink-faint">
@@ -213,14 +231,14 @@ export default function AdminRegionsPage() {
           {formMode === "closed" && (
             <button
               onClick={openCreateForm}
-              className="rounded-xl bg-sage px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sage-dark"
+              className="rounded-xl bg-sage px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sage-dark sm:self-start"
             >
               + New sector
             </button>
           )}
         </div>
 
-        <label className="flex w-64 flex-col gap-1.5">
+        <label className="flex w-full flex-col gap-1.5 sm:w-64">
           <span className="text-xs font-medium text-ink-soft">District</span>
           <select
             value={selectedDistrict}
@@ -248,7 +266,42 @@ export default function AdminRegionsPage() {
 
         {sectorsError && <p className="text-sm text-clay">{sectorsError}</p>}
 
-        <div className="overflow-x-auto rounded-2xl border border-soil/10 bg-white">
+        {/* Mobile: one card per sector. */}
+        <div className="flex flex-col gap-3 md:hidden">
+          {isLoadingSectors && <p className="py-6 text-center text-sm text-ink-faint">Loading…</p>}
+          {!isLoadingSectors && sectors.length === 0 && (
+            <p className="py-6 text-center text-sm text-ink-faint">No sectors for this district.</p>
+          )}
+          {!isLoadingSectors &&
+            sectors.map((sector) => (
+              <div key={sector.id} className="rounded-2xl border border-soil/10 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-ink">{sector.name}</div>
+                    {sector.nameRw && <div className="text-xs text-ink-faint">{sector.nameRw}</div>}
+                  </div>
+                  {sector.coordinatesApproximated ? (
+                    <span className="shrink-0 rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Approximated</span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage-dark">Surveyed</span>
+                  )}
+                </div>
+                <div className="mt-1.5 text-xs text-ink-faint">
+                  {sector.lat}, {sector.lng}
+                </div>
+                <div className="mt-3 flex gap-4 border-t border-soil/5 pt-3 text-sm">
+                  <button onClick={() => openEditForm(sector)} className="font-medium text-ink-soft hover:text-ink">
+                    Edit
+                  </button>
+                  <button onClick={() => openDeleteConfirm(sector)} className="font-medium text-clay hover:opacity-80">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-2xl border border-soil/10 bg-white md:block">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
               <tr>

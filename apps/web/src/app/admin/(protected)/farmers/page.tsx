@@ -58,38 +58,75 @@ export default function AdminFarmersPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSearchSubmit} className="flex gap-3">
+      <form onSubmit={handleSearchSubmit} className="flex flex-col gap-3 sm:flex-row">
         <input
           type="text"
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Search by phone number or region…"
-          className="w-80 rounded-xl border border-soil/15 bg-white px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-sage"
+          className="w-full rounded-xl border border-soil/15 bg-white px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-sage sm:w-80"
         />
-        <button
-          type="submit"
-          className="rounded-xl border border-soil/15 bg-white px-4 py-2 text-sm font-medium text-ink-soft transition-colors hover:bg-parchment-3"
-        >
-          Search
-        </button>
-        {search && (
+        <div className="flex gap-3">
           <button
-            type="button"
-            onClick={() => {
-              setSearchInput("");
-              setSearch("");
-              setPage(1);
-            }}
-            className="rounded-xl px-4 py-2 text-sm font-medium text-ink-faint hover:text-ink-soft"
+            type="submit"
+            className="rounded-xl border border-soil/15 bg-white px-4 py-2 text-sm font-medium text-ink-soft transition-colors hover:bg-parchment-3"
           >
-            Clear
+            Search
           </button>
-        )}
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput("");
+                setSearch("");
+                setPage(1);
+              }}
+              className="rounded-xl px-4 py-2 text-sm font-medium text-ink-faint hover:text-ink-soft"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </form>
 
       {error && <p className="text-sm text-clay">{error}</p>}
 
-      <div className="overflow-x-auto rounded-2xl border border-soil/10 bg-white">
+      {/* Mobile: one card per farmer. */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {isLoading && <p className="py-6 text-center text-sm text-ink-faint">Loading…</p>}
+        {!isLoading && items.length === 0 && (
+          <p className="py-6 text-center text-sm text-ink-faint">No farmers match this search.</p>
+        )}
+        {!isLoading &&
+          items.map((farmer) => (
+            // Deliberately not a whole-card <Link> — MaskedPhoneNumber renders
+            // its own <button> (invalid to nest inside an <a>, and it'd fight
+            // the card for the click), so navigation is an explicit "View" link instead.
+            <div key={farmer.id} className="rounded-2xl border border-soil/10 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <MaskedPhoneNumber phoneNumber={farmer.phoneNumber} />
+                {farmer.deactivatedAt ? (
+                  <span className="shrink-0 rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Deactivated</span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage-dark">Active</span>
+                )}
+              </div>
+              <div className="mt-2 text-xs text-ink-faint">
+                {farmer.district ?? "No region"}
+                {farmer.preferredLanguage && ` · ${LANGUAGE_LABELS[farmer.preferredLanguage] ?? farmer.preferredLanguage}`}
+                {farmer.trackedCropName && ` · ${farmer.trackedCropName}`}
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t border-soil/5 pt-2">
+                <span className="text-xs text-ink-faint">Registered {formatDate(farmer.createdAt)}</span>
+                <Link href={`/admin/farmers/${farmer.id}`} className="text-sm font-medium text-sage-dark hover:opacity-80">
+                  View
+                </Link>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl border border-soil/10 bg-white md:block">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="border-b border-soil/10 text-xs uppercase tracking-wide text-ink-faint">
             <tr>
@@ -148,7 +185,7 @@ export default function AdminFarmersPage() {
       </div>
 
       {!isLoading && total > 0 && (
-        <div className="flex items-center justify-between text-sm text-ink-soft">
+        <div className="flex flex-col gap-3 text-sm text-ink-soft sm:flex-row sm:items-center sm:justify-between">
           <span>
             {total} farmer{total === 1 ? "" : "s"} · page {page} of {totalPages}
           </span>
