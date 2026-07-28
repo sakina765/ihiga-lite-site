@@ -37,13 +37,14 @@ It's a pnpm monorepo: a NestJS API talking to Groq's Llama models, and a Next.js
 
 **Backend** — `apps/api`
 - [NestJS](https://nestjs.com/) + TypeScript
-- PostgreSQL + TypeORM
+- PostgreSQL + TypeORM (schema changes ship as versioned migrations — see [`apps/api/src/database`](./apps/api/src/database))
 - [Groq](https://groq.com/) — Llama models for chat, Whisper for voice, a vision model for photos — via the OpenAI-compatible SDK
 - [Africa's Talking](https://africastalking.com/) for SMS
 - [Open-Meteo](https://open-meteo.com/) for weather (no API key required)
 - Nominatim/OpenStreetMap for village-level geocoding
 - `class-validator` / `class-transformer` for request validation
 - `@nestjs/throttler` for rate limiting, `@nestjs/schedule` for the daily SMS cron
+- `@nestjs/jwt` + `cookie-parser` + `bcryptjs` for admin session auth (see the Admin panel section below)
 - Jest + Supertest
 
 **Shared**
@@ -59,15 +60,15 @@ It's a pnpm monorepo: a NestJS API talking to Groq's Llama models, and a Next.js
 
 ```
 apps/
-  api/       NestJS backend — chat orchestration, Groq, weather, SMS, farmers, crops, language resolution
-  web/       Next.js 14 (App Router) frontend — marketing site + chat UI, fully localized (EN/RW/FR)
+  api/       NestJS backend — chat orchestration, Groq, weather, SMS, farmers, crops, language resolution, admin panel API
+  web/       Next.js 14 (App Router) frontend — marketing site + chat UI + admin panel, fully localized (EN/RW/FR)
 packages/
   shared/    Shared TypeScript types used by both apps
 ```
 
-`apps/api/src`: `ai` (Groq client), `chat` (orchestration), `crops`, `farmers`, `knowledge`, `language`, `location`, `notifications`, `season`, `weather`, `common`, `debug`, `health`.
+`apps/api/src`: `ai` (Groq client), `auth` (admin login/session), `chat` (orchestration), `crops`, `database` (TypeORM migrations), `farmers`, `knowledge`, `language`, `location`, `notifications`, `season`, `weather`, `common`, `debug`, `health`.
 
-`apps/web/src`: `app` (routes), `components/home`, `components/chat` (+ `sidebar`), `components/onboarding`, `components/ui`, `i18n` (dictionaries + provider), `lib` (API clients).
+`apps/web/src`: `app` (routes, including `app/admin`), `components/home`, `components/chat` (+ `sidebar`), `components/onboarding`, `components/admin`, `components/ui`, `i18n` (dictionaries + provider), `lib` (API clients).
 
 ---
 
@@ -179,6 +180,28 @@ A daily cron job (`NotificationSchedulerService`) texts a farmer via Africa's Ta
 
 ---
 
+## 🛠️ Admin panel
+
+An internal-only panel at `/admin` (same Next.js app, same NestJS API — no separate deployment) for staff to manage the data the chatbot is grounded on and to keep an eye on real usage:
+
+- 📚 **Knowledge base** — create, edit, and review the facts the chatbot cites, per crop/topic
+- 🌱 **Crops & stages** — manage the crop catalog and each crop's week-by-week stage timeline
+- 📅 **Seasons** — edit Rwanda's Season A/B/C boundary dates
+- 🧑‍🌾 **Farmers** — a searchable, paginated read-only view of real farmer records (phone numbers masked by default), plus deactivate/reactivate
+- 💬 **Conversations** — read any farmer's conversation transcript, and flag individual messages for follow-up
+- 📨 **Alerts log** — every SMS the daily job has actually sent or attempted, with the real Africa's Talking delivery status
+- 📍 **Regions** — manage sectors (create/edit/delete) within Rwanda's location hierarchy
+
+It's mobile-responsive (a slide-in drawer nav + card layouts replace the desktop tables below `md`), but it's an internal tool, not a public-facing surface — there's no sign-up, and accounts are provisioned by hand:
+
+```bash
+pnpm --filter @ihiga-lite/api promote-to-admin "+250788000000" "a-strong-password"
+```
+
+This promotes an existing farmer row (or creates one) to `role = "admin"` with a bcrypt-hashed password. Admins sign in with that phone number + password at `/admin/login`; the API issues a JWT in an `httpOnly` cookie (`sameSite=lax` locally, `sameSite=none; secure` in production, since the deployed frontend and API are on different sites), which every `/admin/*` request then carries automatically.
+
+---
+
 ## 🔒 Security
 
 A defense-in-depth pass hardened the surfaces most exposed to real traffic:
@@ -187,11 +210,12 @@ A defense-in-depth pass hardened the surfaces most exposed to real traffic:
 - **Prompt-injection resistant grounding** — a farmer's raw message is explicitly delimited from the server-built CONTEXT block sent to Groq, with the system prompt instructed to never treat text after that marker as an additional verified fact, no matter how it's formatted
 - **Anti-enumeration by design** — farmer-lookup endpoints return the same response shape for a real vs. nonexistent id, the same principle already used for conversation lookups
 - **Rate limiting that survives sitting behind a reverse proxy** — `trust proxy` is scoped to exactly Render's one hop, so per-client throttling keys on the real caller's address, not the proxy's
-- **A real Content-Security-Policy** on the frontend — nonce + `strict-dynamic` (never a blanket `unsafe-inline`), plus X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and HSTS in production
+- **A real Content-Security-Policy** on the frontend — nonce + `strict-dynamic` (never a blanket `unsafe-inline`), plus X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and HSTS in production — this covers `/admin/*` too, not just the farmer-facing pages
 - **Database hardening** — TLS certificate validation is enforced (not just encryption without authentication), `synchronize` is hard-blocked in production regardless of env misconfiguration, and a bounded connection pool protects a free-tier Supabase plan from exhaustion
+- **Every admin endpoint is guard-gated** — `AdminGuard` verifies the session JWT and its `role` claim on every `/admin/*` route except login itself; a missing, expired, or non-admin token all collapse to the same 403, and the login endpoint has its own tighter rate limit
 - `/debug/*` is allowlisted to `NODE_ENV=development` specifically — it fails *closed* on anything else (unset, a typo, a staging env), not just excluded on an exact `"production"` match
 
-**Known limitation, deliberately not solved yet:** there's no authenticated session — `farmerId` is a self-generated UUID the client holds (in `localStorage`) and passes on every request, not a verified account. That's a scope boundary for this project's current stage, not an oversight; an OTP-verified phone number plus a signed session is the natural next step before this could responsibly handle real farmer data at scale.
+**Known limitation, deliberately not solved yet:** regular farmers have no authenticated session — `farmerId` is a self-generated UUID the client holds (in `localStorage`) and passes on every request, not a verified account. That's a scope boundary for this project's current stage, not an oversight; an OTP-verified phone number plus a signed session is the natural next step before this could responsibly handle real farmer data at scale. (This limitation is specific to the farmer-facing chat — the admin panel above already requires a real, verified login.)
 
 ---
 
@@ -226,6 +250,20 @@ Run a script in a single workspace package, e.g.:
 ```bash
 pnpm --filter @ihiga-lite/api dev
 pnpm --filter @ihiga-lite/web dev
+```
+
+Database migrations (`apps/api`):
+
+```bash
+pnpm --filter @ihiga-lite/api migration:generate src/database/migrations/SomeName
+pnpm --filter @ihiga-lite/api migration:run
+pnpm --filter @ihiga-lite/api migration:revert
+```
+
+Admin account provisioning (`apps/api`):
+
+```bash
+pnpm --filter @ihiga-lite/api promote-to-admin "+250788000000" "a-strong-password"
 ```
 
 See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for how each piece is deployed.
