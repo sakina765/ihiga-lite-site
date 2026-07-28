@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminCrop, CropStageInput } from "@ihiga-lite/shared";
 import {
   createCrop,
@@ -31,6 +31,12 @@ export default function AdminCropsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [toast, setToast] = useState<string | null>(null);
+
+  // Guards against a stale impact-count response landing after the user has
+  // already cancelled and opened the delete dialog for a different crop —
+  // without this, clicking delete on crop A then quickly on crop B could show
+  // B's dialog with A's conversation count once A's slower request resolves.
+  const deleteRequestIdRef = useRef(0);
 
   const loadCrops = useCallback(async () => {
     setIsLoading(true);
@@ -103,13 +109,18 @@ export default function AdminCropsPage() {
   }
 
   async function openDeleteConfirm(crop: AdminCrop) {
+    const requestId = ++deleteRequestIdRef.current;
     setDeleteTarget(crop);
     setDeleteImpactCount(null);
     try {
       const impact = await getCropImpact(crop.id);
-      setDeleteImpactCount(impact.trackingConversationsCount);
+      if (deleteRequestIdRef.current === requestId) {
+        setDeleteImpactCount(impact.trackingConversationsCount);
+      }
     } catch {
-      setDeleteImpactCount(null);
+      if (deleteRequestIdRef.current === requestId) {
+        setDeleteImpactCount(null);
+      }
     }
   }
 

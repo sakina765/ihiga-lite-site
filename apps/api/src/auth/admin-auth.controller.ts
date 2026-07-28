@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import type { Request, Response } from "express";
+import type { CookieOptions, Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { AdminLoginDto } from "./dto/admin-login.dto";
 import { AdminGuard } from "./admin.guard";
@@ -31,7 +31,17 @@ export class AdminAuthController {
   @Post("logout")
   @HttpCode(204)
   logout(@Res({ passthrough: true }) res: Response): void {
-    res.clearCookie(ADMIN_COOKIE_NAME, { path: "/" });
+    // Must carry the same secure/sameSite attributes the cookie was set with.
+    // A browser identifies a stored cookie by (name, domain, path) alone, but
+    // Chrome (and others) will silently downgrade a Set-Cookie that omits
+    // SameSite to Lax and drop `Secure` if unspecified — in production this
+    // cookie was set with SameSite=None; Secure (required for the Vercel/
+    // Render cross-site setup, see setAdminCookie below), so clearing it with
+    // a bare `{ path: "/" }` sent a mismatched, weaker Set-Cookie that some
+    // browsers reject outright, leaving the real session cookie in place —
+    // the admin appears to "sign out" (redirected to /admin/login) but the
+    // still-valid cookie immediately logs them back in.
+    res.clearCookie(ADMIN_COOKIE_NAME, this.getAdminCookieOptions());
   }
 
   // Lets the admin frontend check "am I actually logged in as an admin" on
@@ -45,8 +55,16 @@ export class AdminAuthController {
   }
 
   private setAdminCookie(res: Response, token: string): void {
-    const isProduction = process.env.NODE_ENV === "production";
     res.cookie(ADMIN_COOKIE_NAME, token, {
+      ...this.getAdminCookieOptions(),
+      maxAge: ADMIN_TOKEN_TTL_SECONDS * 1000,
+    });
+  }
+
+  // Shared by set and clear so the two can never drift apart again.
+  private getAdminCookieOptions(): CookieOptions {
+    const isProduction = process.env.NODE_ENV === "production";
+    return {
       httpOnly: true,
       secure: isProduction,
       // "none" is required for the cookie to be sent on cross-site requests
@@ -57,8 +75,7 @@ export class AdminAuthController {
       // which browsers treat as the SAME site regardless of port — "lax" is
       // both sufficient and correct there.
       sameSite: isProduction ? "none" : "lax",
-      maxAge: ADMIN_TOKEN_TTL_SECONDS * 1000,
       path: "/",
-    });
+    };
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminDistrictItem, AdminSector } from "@ihiga-lite/shared";
 import { listAdminDistricts } from "../../../../lib/admin-districts-api";
 import {
@@ -33,6 +33,10 @@ export default function AdminRegionsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [toast, setToast] = useState<string | null>(null);
+
+  // Guards against a stale impact-count response landing after the user has
+  // already cancelled and opened the delete dialog for a different sector.
+  const deleteRequestIdRef = useRef(0);
 
   useEffect(() => {
     listAdminDistricts()
@@ -126,13 +130,18 @@ export default function AdminRegionsPage() {
   }
 
   async function openDeleteConfirm(sector: AdminSector) {
+    const requestId = ++deleteRequestIdRef.current;
     setDeleteTarget(sector);
     setDeleteImpactCount(null);
     try {
       const impact = await getSectorImpact(sector.id);
-      setDeleteImpactCount(impact.trackingFarmersCount);
+      if (deleteRequestIdRef.current === requestId) {
+        setDeleteImpactCount(impact.trackingFarmersCount);
+      }
     } catch {
-      setDeleteImpactCount(null);
+      if (deleteRequestIdRef.current === requestId) {
+        setDeleteImpactCount(null);
+      }
     }
   }
 

@@ -94,7 +94,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }, [isDrawerOpen]);
 
   async function handleLogout() {
-    await adminLogout();
+    // Never let a failed/slow logout call (network blip, or the API
+    // cold-starting after Render's free-tier spin-down) trap the admin on
+    // the current page — without this try/catch, a rejected fetch inside
+    // adminLogout() throws here and router.replace below never runs, so the
+    // button just does nothing with no visible error. Redirecting to
+    // /admin/login always is safe either way: AdminGate re-checks the real
+    // session on the next protected page load regardless.
+    try {
+      await adminLogout();
+    } catch {
+      // Ignored — see comment above.
+    }
     router.replace("/admin/login");
   }
 
