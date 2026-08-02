@@ -34,7 +34,16 @@ export class WeatherController {
     private readonly sectorsService: SectorsService,
   ) {}
 
-  /** Sidebar section 1 — today's weather for the farmer's own district, plus farm-exact weather if a coordinate is known. */
+  /**
+   * Sidebar section 1 — today's weather for the farmer's own district, plus
+   * farm-exact weather if a coordinate is known. Each fetch is independently
+   * try/caught (same reasoning as sectors()/provinces() below, where this was
+   * first observed in practice) — an Open-Meteo failure (rate limit,
+   * transient network blip, or an unrecognized district) degrades to a null
+   * result instead of 500ing the entire sidebar; TodaySummaryCard on the
+   * frontend already has a dedicated "couldn't load weather" state for
+   * exactly this case.
+   */
   @Get("today")
   async today(@Query() query: WeatherQueryDto): Promise<TodayWeatherResponse> {
     const farmer = await this.farmersService.getById(query.farmerId);
@@ -42,17 +51,28 @@ export class WeatherController {
       return { district: null };
     }
 
-    const district = await this.weatherService.getForecast(farmer.district);
+    let district: WeatherInfo | null;
+    try {
+      district = await this.weatherService.getForecast(farmer.district);
+    } catch (error) {
+      this.logger.warn(`Today's weather unavailable for district "${farmer.district}": ${error instanceof Error ? error.message : error}`);
+      district = null;
+    }
 
     // Precedence: resolvedLatitude/resolvedLongitude (geocoded village > sector
     // centroid, set by the cascading picker at registration) beats the raw
     // farmLatitude/farmLongitude GPS reading — see farmer.entity.ts.
     const exactLatitude = farmer.resolvedLatitude ?? farmer.farmLatitude;
     const exactLongitude = farmer.resolvedLongitude ?? farmer.farmLongitude;
-    const farmExact =
-      exactLatitude != null && exactLongitude != null
-        ? await this.weatherService.getForecastByCoordinates(exactLatitude, exactLongitude, farmer.district)
-        : undefined;
+
+    let farmExact: WeatherInfo | undefined;
+    if (exactLatitude != null && exactLongitude != null) {
+      try {
+        farmExact = await this.weatherService.getForecastByCoordinates(exactLatitude, exactLongitude, farmer.district);
+      } catch (error) {
+        this.logger.warn(`Farm-exact weather unavailable for farmer ${farmer.id}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
 
     return { district, farmExact };
   }
