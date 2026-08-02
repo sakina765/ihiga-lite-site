@@ -187,14 +187,26 @@ export class FarmersService {
    * Lets ChatGate (the farmer-facing client) find out its own account is
    * deactivated BEFORE rendering the chat widget, rather than only ever
    * finding out after sending a message and getting
-   * ChatOrchestratorService's canned reply back. Same anti-enumeration
-   * treatment as getPreferredLanguage above: a nonexistent id returns
-   * `false`, identical to a real, active farmer — never a distinguishable
-   * signal that the id doesn't exist.
+   * ChatOrchestratorService's canned reply back.
+   *
+   * Deliberately NOT the anti-enumeration treatment used elsewhere in this
+   * file (getPreferredLanguage, updatePreferredLanguage) — a missing farmer
+   * is treated as blocked, the same as one with deactivatedAt set, rather
+   * than silently reported as "fine." The soft-delete path (the admin
+   * panel's own Delete action) always leaves the row in place with
+   * deactivatedAt set, so this distinction only ever fires for a row that's
+   * gone via some route other than that mechanism (e.g. a raw SQL DELETE) —
+   * without this, a farmerId cached in a browser from before such a delete
+   * would report "not deactivated" (indistinguishable from genuinely active)
+   * and sail straight through ChatGate. The tradeoff this accepts: a caller
+   * can now tell a real-but-fine id apart from a made-up one via this one
+   * endpoint — acceptable here since the only realistic caller is a
+   * farmer's own device checking its own id, not a third party probing
+   * others'.
    */
   async isDeactivated(id: string): Promise<boolean> {
     const farmer = await this.farmerRepository.findOne({ where: { id } });
-    return !!farmer?.deactivatedAt;
+    return !farmer || !!farmer.deactivatedAt;
   }
 
   /**

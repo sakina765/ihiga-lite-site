@@ -70,8 +70,9 @@ export class FarmersController {
   // to only take effect once a farmer actually sent a message (see
   // ChatOrchestratorService.handleDeactivatedFarmerMessage), so a deactivated
   // farmer could still open the app and see a fully normal-looking chat UI.
-  // Same anti-enumeration treatment as getLanguage above: always 200,
-  // deactivated: false for a nonexistent id, identical to a real active farmer.
+  // Unlike getLanguage above, this is NOT anti-enumeration-safe on purpose —
+  // see FarmersService.isDeactivated's doc comment for why a missing farmer
+  // is reported the same as a deactivated one, not the same as an active one.
   @Get(":id/status")
   async getStatus(@Param("id") id: string) {
     const deactivated = await this.farmersService.isDeactivated(id);
