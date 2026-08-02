@@ -60,7 +60,7 @@ describe("ChatOrchestratorService", () => {
       localName: slug === "maize" ? "Ibigori" : "Ibishyimbo",
       stages: [],
     }));
-    farmersService = { getById: jest.fn(async () => ({ id: FARMER_ID, district: null, preferredLanguage: null })) };
+    farmersService = { getById: jest.fn(async () => ({ id: FARMER_ID, role: "farmer", district: null, preferredLanguage: null })) };
     weatherService = { getForecast: jest.fn() };
     cropSuggestionsService = { getSuggestions: jest.fn(() => ({ season: makeSeason(), province: null, crops: [] })) };
 
@@ -359,7 +359,7 @@ describe("ChatOrchestratorService", () => {
 
   describe("Phase 9: Farmer.preferredLanguage as the authoritative language baseline", () => {
     it("uses Farmer.preferredLanguage over LanguageService.detect() when the farmer sends an English message", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: "rw" });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: null, preferredLanguage: "rw" });
       languageService.detect.mockReturnValue("en");
 
       await service.handleMessage({ farmerId: FARMER_ID, message: "hello, how is my crop doing" });
@@ -368,7 +368,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("still lets a per-message explicit language override win over Farmer.preferredLanguage", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: "rw" });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: null, preferredLanguage: "rw" });
 
       await service.handleMessage({ farmerId: FARMER_ID, message: "switch to french please", language: "fr" });
 
@@ -376,7 +376,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("falls back to LanguageService.detect() when the farmer has no preferredLanguage set", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: null, preferredLanguage: null });
       languageService.detect.mockReturnValue("fr");
 
       await service.handleMessage({ farmerId: FARMER_ID, message: "Bonjour, comment ça va?" });
@@ -410,7 +410,7 @@ describe("ChatOrchestratorService", () => {
 
   describe("weather context", () => {
     it("looks up weather via the farmer's district and forwards it to generateReply", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: "Musanze", preferredLanguage: null });
       const weather = { district: "Musanze", todayRainfallProbability: 80, todayRainfallMm: 15, soilWorkable: false, outlook: [], fetchedAt: "now" };
       weatherService.getForecast.mockResolvedValue(weather);
 
@@ -421,7 +421,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("omits weather when the farmer has no district set", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: null, preferredLanguage: null });
 
       await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
 
@@ -430,7 +430,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("omits weather gracefully (rather than throwing) when the lookup fails", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: "Musanze", preferredLanguage: null });
       weatherService.getForecast.mockRejectedValue(new Error("Open-Meteo down"));
 
       const result = await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
@@ -448,7 +448,7 @@ describe("ChatOrchestratorService", () => {
     // lets GroqService's prompt draw that distinction (see groq.service.ts's
     // buildContextLines).
     it("is true even when weather/seasonalCrops still come back empty, as long as the farmer has a district", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: "Musanze", preferredLanguage: null });
       weatherService.getForecast.mockRejectedValue(new Error("Open-Meteo down"));
       cropSuggestionsService.getSuggestions.mockReturnValue({ season: makeSeason(), province: "Northern", crops: [] });
 
@@ -460,7 +460,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("is false when the farmer genuinely has no district set", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: null, preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: null, preferredLanguage: null });
 
       await service.handleMessage({ farmerId: FARMER_ID, message: "Hi" });
 
@@ -476,7 +476,7 @@ describe("ChatOrchestratorService", () => {
     });
 
     it("is forwarded to analyzeImage the same way for photo messages", async () => {
-      farmersService.getById.mockResolvedValue({ id: FARMER_ID, district: "Musanze", preferredLanguage: null });
+      farmersService.getById.mockResolvedValue({ id: FARMER_ID, role: "farmer", district: "Musanze", preferredLanguage: null });
 
       await service.handlePhotoMessage({ farmerId: FARMER_ID, imageBuffer: Buffer.from("x"), mimeType: "image/png" });
 
@@ -933,6 +933,7 @@ describe("ChatOrchestratorService", () => {
     beforeEach(() => {
       farmersService.getById.mockResolvedValue({
         id: FARMER_ID,
+        role: "farmer",
         district: null,
         preferredLanguage: null,
         deactivatedAt: new Date("2026-01-01"),
@@ -978,6 +979,28 @@ describe("ChatOrchestratorService", () => {
 
       expect(result.replyText).toContain("deleted");
       // Never reached the pending-confirmation resolution path, let alone Groq.
+      expect(groqService.generateReply).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("non-farmer role accounts", () => {
+    beforeEach(() => {
+      // registerOrFind refuses to hand out an admin's farmerId in the first
+      // place — this covers one obtained some other way (e.g. cached before
+      // the account was promoted to admin).
+      farmersService.getById.mockResolvedValue({
+        id: FARMER_ID,
+        role: "admin",
+        district: null,
+        preferredLanguage: null,
+        deactivatedAt: null,
+      });
+    });
+
+    it("handleMessage returns the same blocked notice as a deactivated account, never calls Groq", async () => {
+      const result = await service.handleMessage({ farmerId: FARMER_ID, message: "hello" });
+
+      expect(result.replyText).toContain("deleted");
       expect(groqService.generateReply).not.toHaveBeenCalled();
     });
   });

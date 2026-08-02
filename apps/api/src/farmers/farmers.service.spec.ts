@@ -81,6 +81,16 @@ describe("FarmersService", () => {
     expect(farmer.district).toBe("Musanze");
   });
 
+  it("refuses to register a phone number that already belongs to an admin account", async () => {
+    const existingAdmin = { id: "admin-id", phoneNumber: "+250788123456", role: "admin" };
+    farmerRepository.findOne.mockResolvedValue(existingAdmin);
+
+    await expect(service.registerOrFind({ phoneNumber: "0788123456" })).rejects.toThrow(
+      "This phone number can't be used to register as a farmer.",
+    );
+    expect(farmerRepository.save).not.toHaveBeenCalled();
+  });
+
   describe("preferredLanguage (Phase 9)", () => {
     it("sets preferredLanguage on a newly created farmer", async () => {
       farmerRepository.findOne.mockResolvedValue(null);
@@ -146,6 +156,28 @@ describe("FarmersService", () => {
 
       farmerRepository.findOne.mockResolvedValueOnce(null);
       await expect(service.getPreferredLanguage("missing-id")).resolves.toBeNull();
+    });
+  });
+
+  describe("isDeactivated", () => {
+    it("returns false for a farmer that exists, is active, and has role farmer", async () => {
+      farmerRepository.findOne.mockResolvedValue({ id: "existing-id", role: "farmer", deactivatedAt: null });
+      await expect(service.isDeactivated("existing-id")).resolves.toBe(false);
+    });
+
+    it("returns true for a farmer with deactivatedAt set", async () => {
+      farmerRepository.findOne.mockResolvedValue({ id: "existing-id", role: "farmer", deactivatedAt: new Date() });
+      await expect(service.isDeactivated("existing-id")).resolves.toBe(true);
+    });
+
+    it("returns true for a nonexistent id", async () => {
+      farmerRepository.findOne.mockResolvedValue(null);
+      await expect(service.isDeactivated("missing-id")).resolves.toBe(true);
+    });
+
+    it("returns true for an admin account, even with no deactivatedAt set — an admin's id must never present as a usable farmer", async () => {
+      farmerRepository.findOne.mockResolvedValue({ id: "admin-id", role: "admin", deactivatedAt: null });
+      await expect(service.isDeactivated("admin-id")).resolves.toBe(true);
     });
   });
 

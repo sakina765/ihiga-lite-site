@@ -92,7 +92,7 @@ export class ChatOrchestratorService {
     // and this must never reach Groq (the whole point is stopping further
     // usage/cost for this account).
     const farmer = await this.farmersService.getById(params.farmerId);
-    if (farmer?.deactivatedAt) {
+    if (this.isBlockedFarmer(farmer)) {
       return this.handleDeactivatedFarmerMessage(params.conversationId, params.farmerId, params.message, params.messageType ?? "text", farmer);
     }
 
@@ -164,7 +164,7 @@ export class ChatOrchestratorService {
    */
   async handlePhotoMessage(params: HandlePhotoMessageParams): Promise<ChatResponse> {
     const farmer = await this.farmersService.getById(params.farmerId);
-    if (farmer?.deactivatedAt) {
+    if (this.isBlockedFarmer(farmer)) {
       return this.handleDeactivatedFarmerMessage(params.conversationId, params.farmerId, params.caption ?? "[Photo shared]", "photo", farmer);
     }
 
@@ -208,6 +208,18 @@ export class ChatOrchestratorService {
     const pendingProposal = await this.maybeProposeCropTracking(conversation, structuredReply);
 
     return this.toChatResponse(conversation, season, cropStage, structuredReply, pendingProposal);
+  }
+
+  /**
+   * True if this farmerId should never get a real Groq reply — deactivated,
+   * or (defense-in-depth; FarmersService.registerOrFind refuses to hand out
+   * an admin's farmerId in the first place) not actually role "farmer". A
+   * farmer that doesn't exist at all is deliberately NOT blocked here —
+   * that's the separate, pre-existing "unknown farmer" case, handled by
+   * prepareTurnContext's own null-farmer handling, unchanged by this check.
+   */
+  private isBlockedFarmer(farmer: Farmer | null): farmer is Farmer {
+    return !!farmer && (!!farmer.deactivatedAt || farmer.role !== "farmer");
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, Not, Repository } from "typeorm";
 import { Farmer } from "./entities/farmer.entity";
@@ -82,10 +82,27 @@ export class FarmersService {
     private readonly geocodingService: GeocodingService,
   ) {}
 
-  /** Idempotent by phone number — registering the same number twice returns the same Farmer. */
+  /**
+   * Idempotent by phone number — registering the same number twice returns
+   * the same Farmer.
+   *
+   * A phone number belonging to an admin account is refused outright, not
+   * silently backfilled — role is a single column shared by both farmer and
+   * admin rows (see Farmer.role), and without this check, anyone who knows
+   * an admin's phone number could call this public endpoint and walk away
+   * with that admin's own farmerId, fully usable to chat as them (nothing in
+   * the chat pipeline itself checks role). This is the one door that
+   * actually matters: the other two checks (isDeactivated, handleMessage/
+   * handlePhotoMessage below) are defense-in-depth for a farmerId obtained
+   * some other way, not the primary guard.
+   */
   async registerOrFind(params: RegisterOrFindParams): Promise<Farmer> {
     const normalized = normalizePhoneNumber(params.phoneNumber);
     const existing = await this.farmerRepository.findOne({ where: { phoneNumber: normalized } });
+
+    if (existing?.role === "admin") {
+      throw new ConflictException("This phone number can't be used to register as a farmer.");
+    }
 
     if (existing) {
       let changed = false;
@@ -203,10 +220,16 @@ export class FarmersService {
    * endpoint — acceptable here since the only realistic caller is a
    * farmer's own device checking its own id, not a third party probing
    * others'.
+   *
+   * Also blocks a non-"farmer" role — registerOrFind refuses to hand out an
+   * admin's farmerId in the first place, but this is the defense-in-depth
+   * layer for one obtained some other way (e.g. cached from before an
+   * account was promoted to admin, as actually happened once in this
+   * project's own history).
    */
   async isDeactivated(id: string): Promise<boolean> {
     const farmer = await this.farmerRepository.findOne({ where: { id } });
-    return !farmer || !!farmer.deactivatedAt;
+    return !farmer || farmer.role !== "farmer" || !!farmer.deactivatedAt;
   }
 
   /**
