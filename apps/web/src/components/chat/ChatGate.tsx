@@ -44,20 +44,29 @@ export function ChatGate() {
     };
   }, []);
 
+  // registerOrFind is idempotent BY PHONE NUMBER, not by account status: a
+  // farmer whose account was deactivated, then clears localStorage (new
+  // device, reinstall) and re-onboards with the SAME phone number, gets the
+  // SAME deactivated farmerId handed back by POST /farmers/register — with
+  // nothing in that response distinguishing it from a fresh registration.
+  // Assuming "just registered" means "definitely active" would let
+  // deactivation be silently bypassed just by re-onboarding, so this re-runs
+  // the real status check instead of assuming the outcome.
+  function handleRegistered(id: string) {
+    localStorage.setItem(STORAGE_KEY, id);
+    setFarmerId(id);
+    setStatus("checking");
+    isFarmerDeactivated(id).then((deactivated) => {
+      setStatus(deactivated ? "deactivated" : "active");
+    });
+  }
+
   if (status === "checking") {
     return null;
   }
 
   if (status === "onboarding") {
-    return (
-      <OnboardingScreen
-        onRegistered={(id) => {
-          localStorage.setItem(STORAGE_KEY, id);
-          setFarmerId(id);
-          setStatus("active");
-        }}
-      />
-    );
+    return <OnboardingScreen onRegistered={handleRegistered} />;
   }
 
   if (status === "deactivated") {
