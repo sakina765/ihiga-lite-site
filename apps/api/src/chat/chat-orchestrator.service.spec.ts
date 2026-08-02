@@ -942,7 +942,7 @@ describe("ChatOrchestratorService", () => {
     it("handleMessage returns a deactivation notice and never calls Groq", async () => {
       const result = await service.handleMessage({ farmerId: FARMER_ID, message: "hello" });
 
-      expect(result.replyText).toContain("deactivated");
+      expect(result.replyText).toContain("deleted");
       expect(groqService.generateReply).not.toHaveBeenCalled();
       // Still persists the farmer's message and a bot reply, same as any real turn.
       expect(messageRepository.save).toHaveBeenCalledTimes(2);
@@ -955,7 +955,7 @@ describe("ChatOrchestratorService", () => {
         mimeType: "image/jpeg",
       });
 
-      expect(result.replyText).toContain("deactivated");
+      expect(result.replyText).toContain("deleted");
       expect(groqService.analyzeImage).not.toHaveBeenCalled();
     });
 
@@ -976,7 +976,7 @@ describe("ChatOrchestratorService", () => {
         message: "Yes, track Maize (planted Jun 1)",
       });
 
-      expect(result.replyText).toContain("deactivated");
+      expect(result.replyText).toContain("deleted");
       // Never reached the pending-confirmation resolution path, let alone Groq.
       expect(groqService.generateReply).not.toHaveBeenCalled();
     });

@@ -39,9 +39,9 @@ const DECLINE_CHIP_TEXT = "No, that's not right";
 // anti-abuse/cost-control teeth, not just a label the admin panel shows to
 // itself, so this is checked BEFORE any Groq/Whisper/vision call is made.
 const DEACTIVATED_ACCOUNT_MESSAGES: Record<ChatLanguage, string> = {
-  en: "This account has been deactivated. Please contact support if you believe this is a mistake.",
-  rw: "Iyi konti yahagaritswe. Nyamuneka vugana n'ubufasha niba ubona ari amakosa.",
-  fr: "Ce compte a été désactivé. Veuillez contacter le support si vous pensez qu'il s'agit d'une erreur.",
+  en: "This account has been deleted. Please contact support if you believe this is a mistake.",
+  rw: "Iyi konti yasibwe. Nyamuneka vugana n'ubufasha niba ubona ari amakosa.",
+  fr: "Ce compte a été supprimé. Veuillez contacter le support si vous pensez qu'il s'agit d'une erreur.",
 };
 
 function formatPlantingDateForChip(isoDate: string): string {

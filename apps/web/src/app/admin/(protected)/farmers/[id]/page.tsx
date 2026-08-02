@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { AdminFarmerDetailResponse } from "@ihiga-lite/shared";
-import { deactivateFarmer, getAdminFarmerDetail, reactivateFarmer } from "../../../../../lib/admin-farmers-api";
+import { deleteFarmer, getAdminFarmerDetail } from "../../../../../lib/admin-farmers-api";
 import { MaskedPhoneNumber } from "../../../../../components/admin/farmers/MaskedPhoneNumber";
 import { ConfirmDialog } from "../../../../../components/admin/ConfirmDialog";
 
@@ -49,14 +49,14 @@ export default function AdminFarmerDetailPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const isDeactivated = !!detail?.farmer.deactivatedAt;
+  const isDeleted = !!detail?.farmer.deactivatedAt;
 
-  async function handleConfirmToggle() {
+  async function handleConfirmDelete() {
     setIsBusy(true);
     try {
-      const updated = isDeactivated ? await reactivateFarmer(farmerId) : await deactivateFarmer(farmerId);
+      const updated = await deleteFarmer(farmerId);
       setDetail((prev) => (prev ? { ...prev, farmer: updated } : prev));
-      setToast(isDeactivated ? "Account reactivated." : "Account deactivated.");
+      setToast("Farmer deleted.");
       setIsConfirmOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
@@ -98,8 +98,8 @@ export default function AdminFarmerDetailPage() {
             </h1>
             <p className="mt-1 text-sm text-ink-soft">Registered {formatDateTime(farmer.createdAt)}</p>
           </div>
-          {isDeactivated ? (
-            <span className="rounded-full bg-clay/15 px-3 py-1 text-xs font-medium text-clay">Deactivated</span>
+          {isDeleted ? (
+            <span className="rounded-full bg-clay/15 px-3 py-1 text-xs font-medium text-clay">Deleted</span>
           ) : (
             <span className="rounded-full bg-sage/15 px-3 py-1 text-xs font-medium text-sage-dark">Active</span>
           )}
@@ -140,16 +140,16 @@ export default function AdminFarmerDetailPage() {
           </div>
         </dl>
 
-        <div className="mt-6">
-          <button
-            onClick={() => setIsConfirmOpen(true)}
-            className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-colors ${
-              isDeactivated ? "bg-sage hover:bg-sage-dark" : "bg-clay hover:bg-clay/90"
-            }`}
-          >
-            {isDeactivated ? "Reactivate account" : "Deactivate account"}
-          </button>
-        </div>
+        {!isDeleted && (
+          <div className="mt-6">
+            <button
+              onClick={() => setIsConfirmOpen(true)}
+              className="rounded-xl bg-clay px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clay/90"
+            >
+              Delete farmer
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-soil/10 bg-white p-4 sm:p-6">
@@ -219,16 +219,12 @@ export default function AdminFarmerDetailPage() {
 
       <ConfirmDialog
         open={isConfirmOpen}
-        title={isDeactivated ? "Reactivate this account?" : "Deactivate this account?"}
-        body={
-          isDeactivated
-            ? "The farmer will be able to chat and receive SMS alerts again."
-            : "The farmer's next message will get a deactivation notice instead of a real reply, and they'll be skipped from SMS alerts. Their existing conversation history is kept, not deleted."
-        }
-        confirmLabel={isDeactivated ? "Reactivate" : "Deactivate"}
+        title="Delete this farmer?"
+        body="This can't be undone. They'll be signed out of chat immediately (their next reload or message shows a deleted notice) and skipped from SMS alerts. Their conversation history is kept for records, but their phone number is freed up — the same number can register a brand new account afterward."
+        confirmLabel="Delete"
         isBusy={isBusy}
         onCancel={() => setIsConfirmOpen(false)}
-        onConfirm={handleConfirmToggle}
+        onConfirm={handleConfirmDelete}
       />
     </div>
   );

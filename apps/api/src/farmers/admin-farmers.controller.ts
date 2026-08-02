@@ -32,9 +32,4 @@ export class AdminFarmersController {
   deactivate(@Param("id", new ParseUUIDPipe()) id: string): Promise<AdminFarmerProfile> {
     return this.farmersService.deactivate(id);
   }
-
-  @Patch(":id/reactivate")
-  reactivate(@Param("id", new ParseUUIDPipe()) id: string): Promise<AdminFarmerProfile> {
-    return this.farmersService.reactivate(id);
-  }
 }

@@ -11,6 +11,18 @@ import { Message } from "../chat/entities/message.entity";
 import { Crop } from "../crops/entities/crop.entity";
 import { Sector } from "../location/entities/sector.entity";
 
+// Marker used to permanently sever a deleted farmer's row from
+// normalizePhoneNumber-based lookups (see FarmersService.deactivate) while
+// still letting the admin UI show the original number for historical
+// reference — stripped back off by displayPhoneNumber below, never sent to
+// registerOrFind or normalizePhoneNumber again.
+const DELETED_PHONE_MARKER = "#deleted#";
+
+function displayPhoneNumber(phoneNumber: string): string {
+  const markerIndex = phoneNumber.indexOf(DELETED_PHONE_MARKER);
+  return markerIndex === -1 ? phoneNumber : phoneNumber.slice(0, markerIndex);
+}
+
 export interface AdminFarmerListItem {
   id: string;
   phoneNumber: string;
@@ -220,9 +232,9 @@ export class FarmersService {
 
   /**
    * Same lookup, but 404s for an admin account too — every admin-panel
-   * farmer-oversight method (detail view, deactivate, reactivate) uses this,
-   * not getByIdOrThrow, so this surface can never be pointed at an admin's
-   * own Farmer row (matches adminList's role='farmer' filter).
+   * farmer-oversight method (detail view, deactivate) uses this, not
+   * getByIdOrThrow, so this surface can never be pointed at an admin's own
+   * Farmer row (matches adminList's role='farmer' filter).
    */
   private async getFarmerRecordOrThrow(id: string): Promise<Farmer> {
     const farmer = await this.getByIdOrThrow(id);
@@ -232,10 +244,10 @@ export class FarmersService {
     return farmer;
   }
 
-  /** Strips passwordHash — never sent to the client, even hashed, even to an authenticated admin. */
+  /** Strips passwordHash (never sent to the client, even hashed, even to an authenticated admin) and un-mangles a deleted farmer's phoneNumber back to its original, readable form for display. */
   private toAdminProfile(farmer: Farmer): AdminFarmerProfile {
     const { passwordHash: _passwordHash, ...profile } = farmer;
-    return profile;
+    return { ...profile, phoneNumber: displayPhoneNumber(profile.phoneNumber) };
   }
 
   /**
@@ -265,7 +277,7 @@ export class FarmersService {
 
     const items: AdminFarmerListItem[] = farmers.map((farmer) => ({
       id: farmer.id,
-      phoneNumber: farmer.phoneNumber,
+      phoneNumber: displayPhoneNumber(farmer.phoneNumber),
       district: farmer.district,
       preferredLanguage: farmer.preferredLanguage,
       createdAt: farmer.createdAt,
@@ -353,16 +365,26 @@ export class FarmersService {
     return { farmer: this.toAdminProfile(farmer), sector, conversations: conversationSummaries };
   }
 
-  /** Soft delete only — see Farmer.deactivatedAt's doc comment for what this actually blocks. */
+  /**
+   * Irreversible by design — there is no un-delete. The row itself, and its
+   * conversations/messages/notification history, are kept (never actually
+   * erased, so admin-panel history and any audit trail survive), but
+   * `phoneNumber` is permanently mangled with this farmer's own id as a
+   * unique, deterministic suffix. That's the part that makes this
+   * irreversible in practice: it both permanently fails
+   * normalizePhoneNumber's `^\+2507\d{8}$`-shaped regex (so this row can
+   * never again be matched by phone number) AND frees the real number for
+   * registerOrFind to treat as brand new — the same phone number can be used
+   * to create a genuinely fresh, active account afterward. Idempotent: a
+   * second call on an already-deleted farmer is a no-op rather than
+   * mangling an already-mangled number further.
+   */
   async deactivate(id: string): Promise<AdminFarmerProfile> {
     const farmer = await this.getFarmerRecordOrThrow(id);
-    farmer.deactivatedAt = new Date();
-    return this.toAdminProfile(await this.farmerRepository.save(farmer));
-  }
-
-  async reactivate(id: string): Promise<AdminFarmerProfile> {
-    const farmer = await this.getFarmerRecordOrThrow(id);
-    farmer.deactivatedAt = null;
+    if (!farmer.deactivatedAt) {
+      farmer.deactivatedAt = new Date();
+      farmer.phoneNumber = `${farmer.phoneNumber}${DELETED_PHONE_MARKER}${farmer.id}`;
+    }
     return this.toAdminProfile(await this.farmerRepository.save(farmer));
   }
 }

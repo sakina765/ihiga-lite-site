@@ -39,19 +39,9 @@ export async function getAdminFarmerDetail(id: string): Promise<AdminFarmerDetai
   return response.json();
 }
 
-export async function deactivateFarmer(id: string): Promise<AdminFarmerProfile> {
+/** Irreversible — see FarmersService.deactivate's doc comment. The API route is still named "deactivate" (unchanged, tested), but this now also permanently frees the farmer's phone number for reuse. */
+export async function deleteFarmer(id: string): Promise<AdminFarmerProfile> {
   const response = await fetch(`${getApiUrl()}/admin/farmers/${encodeURIComponent(id)}/deactivate`, {
-    method: "PATCH",
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(await extractErrorMessage(response));
-  }
-  return response.json();
-}
-
-export async function reactivateFarmer(id: string): Promise<AdminFarmerProfile> {
-  const response = await fetch(`${getApiUrl()}/admin/farmers/${encodeURIComponent(id)}/reactivate`, {
     method: "PATCH",
     credentials: "include",
   });

@@ -4,26 +4,36 @@ import { useEffect, useState } from "react";
 import { OnboardingScreen } from "../onboarding/OnboardingScreen";
 import { ChatWidget } from "./ChatWidget";
 import { isFarmerDeactivated } from "../../lib/farmers-api";
-import { useLanguage } from "../../i18n/LanguageProvider";
 
 const STORAGE_KEY = "ihiga_farmer_id";
+const CONVERSATION_STORAGE_KEY = "ihiga_conversation_id";
 
-type GateStatus = "checking" | "onboarding" | "active" | "deactivated";
+type GateStatus = "checking" | "onboarding" | "active";
 
 /**
  * Gates the chat UI behind farmer registration, and behind account status.
- * Deactivation used to only take effect once a farmer actually sent a
- * message (see ChatOrchestratorService.handleDeactivatedFarmerMessage's
- * canned reply) — opening /chat itself looked completely normal right up
- * until that point, which reads as "deactivation doesn't do anything" from
- * the outside. This checks status once on mount, before ChatWidget ever
- * renders, same "return null while unknown" pattern the gate already used
- * for the registration check.
+ *
+ * A deleted farmer's phoneNumber is permanently freed for reuse (see
+ * FarmersService.deactivate) — there is no restore, so unlike an earlier
+ * version of this gate, a deleted account is never a dead end shown to the
+ * farmer. It's treated exactly like "never registered": the stale
+ * farmerId/conversationId are cleared and they're dropped straight into
+ * onboarding, where the same phone number (or a different one) just starts
+ * a genuinely new, active account. Clearing the conversation id too matters
+ * — otherwise ChatWidget would try to resume the OLD farmer's conversation,
+ * which 404s once it belongs to a different farmerId (see the ownership
+ * check shared across every conversationId-accepting endpoint).
  */
 export function ChatGate() {
   const [status, setStatus] = useState<GateStatus>("checking");
   const [farmerId, setFarmerId] = useState<string | null>(null);
-  const { t } = useLanguage();
+
+  function clearStaleFarmer() {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    setFarmerId(null);
+    setStatus("onboarding");
+  }
 
   useEffect(() => {
     const storedId = localStorage.getItem(STORAGE_KEY);
@@ -35,8 +45,13 @@ export function ChatGate() {
 
     let cancelled = false;
     isFarmerDeactivated(storedId).then((deactivated) => {
-      if (!cancelled) {
-        setStatus(deactivated ? "deactivated" : "active");
+      if (cancelled) {
+        return;
+      }
+      if (deactivated) {
+        clearStaleFarmer();
+      } else {
+        setStatus("active");
       }
     });
     return () => {
@@ -44,20 +59,19 @@ export function ChatGate() {
     };
   }, []);
 
-  // registerOrFind is idempotent BY PHONE NUMBER, not by account status: a
-  // farmer whose account was deactivated, then clears localStorage (new
-  // device, reinstall) and re-onboards with the SAME phone number, gets the
-  // SAME deactivated farmerId handed back by POST /farmers/register — with
-  // nothing in that response distinguishing it from a fresh registration.
-  // Assuming "just registered" means "definitely active" would let
-  // deactivation be silently bypassed just by re-onboarding, so this re-runs
-  // the real status check instead of assuming the outcome.
   function handleRegistered(id: string) {
     localStorage.setItem(STORAGE_KEY, id);
     setFarmerId(id);
     setStatus("checking");
     isFarmerDeactivated(id).then((deactivated) => {
-      setStatus(deactivated ? "deactivated" : "active");
+      if (deactivated) {
+        // Should be effectively unreachable now that deletion frees the
+        // phone number (a fresh register() would create a new row instead
+        // of finding this one) — kept as a safety net, not a dead end.
+        clearStaleFarmer();
+      } else {
+        setStatus("active");
+      }
     });
   }
 
@@ -67,17 +81,6 @@ export function ChatGate() {
 
   if (status === "onboarding") {
     return <OnboardingScreen onRegistered={handleRegistered} />;
-  }
-
-  if (status === "deactivated") {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-parchment-2 px-6">
-        <div className="w-full max-w-sm rounded-2xl border border-soil/10 bg-white p-6 text-center shadow-sm">
-          <h1 className="text-lg font-semibold text-ink">{t("chat.deactivated.title")}</h1>
-          <p className="mt-2 text-sm text-ink-soft">{t("chat.deactivated.body")}</p>
-        </div>
-      </div>
-    );
   }
 
   return <ChatWidget farmerId={farmerId as string} />;

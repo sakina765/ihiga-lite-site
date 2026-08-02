@@ -106,7 +106,7 @@ export default function AdminFarmersPage() {
               <div className="flex items-start justify-between gap-3">
                 <MaskedPhoneNumber phoneNumber={farmer.phoneNumber} />
                 {farmer.deactivatedAt ? (
-                  <span className="shrink-0 rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Deactivated</span>
+                  <span className="shrink-0 rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Deleted</span>
                 ) : (
                   <span className="shrink-0 rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage-dark">Active</span>
                 )}
@@ -168,7 +168,7 @@ export default function AdminFarmersPage() {
                   <td className="px-4 py-3 text-ink-soft">{formatDate(farmer.createdAt)}</td>
                   <td className="px-4 py-3">
                     {farmer.deactivatedAt ? (
-                      <span className="rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Deactivated</span>
+                      <span className="rounded-full bg-clay/15 px-2.5 py-1 text-xs font-medium text-clay">Deleted</span>
                     ) : (
                       <span className="rounded-full bg-sage/15 px-2.5 py-1 text-xs font-medium text-sage-dark">Active</span>
                     )}
