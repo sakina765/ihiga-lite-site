@@ -13,7 +13,19 @@ function getApiUrl(): string {
 
 async function extractErrorMessage(response: Response): Promise<string> {
   const data = await response.json().catch(() => null);
-  return (data && typeof data.message === "string" ? data.message : null) ?? `Request failed with status ${response.status}`;
+  const message = data?.message;
+  if (typeof message === "string") {
+    return message;
+  }
+  // NestJS's ValidationPipe always returns `message` as an array of
+  // constraint-violation strings, even for a single failing field — treating
+  // only the string case as valid silently discarded every validation error
+  // (e.g. "slug must be lowercase letters/numbers separated by hyphens") in
+  // favor of a generic "Request failed with status 400".
+  if (Array.isArray(message) && message.every((entry) => typeof entry === "string")) {
+    return message.join("; ");
+  }
+  return `Request failed with status ${response.status}`;
 }
 
 export async function listAdminCrops(): Promise<AdminCrop[]> {

@@ -65,4 +65,16 @@ export class FarmersController {
     const preferredLanguage = await this.farmersService.getPreferredLanguage(id);
     return { farmerId: id, preferredLanguage };
   }
+
+  // ChatGate calls this before rendering the chat widget — deactivation used
+  // to only take effect once a farmer actually sent a message (see
+  // ChatOrchestratorService.handleDeactivatedFarmerMessage), so a deactivated
+  // farmer could still open the app and see a fully normal-looking chat UI.
+  // Same anti-enumeration treatment as getLanguage above: always 200,
+  // deactivated: false for a nonexistent id, identical to a real active farmer.
+  @Get(":id/status")
+  async getStatus(@Param("id") id: string) {
+    const deactivated = await this.farmersService.isDeactivated(id);
+    return { farmerId: id, deactivated };
+  }
 }

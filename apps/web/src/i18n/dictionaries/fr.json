@@ -48,6 +48,8 @@
   "chat.actions.sharing": "Préparation du PDF…",
   "chat.actions.delete": "Supprimer la conversation",
 
+  "chat.deactivated.title": "Compte désactivé",
+  "chat.deactivated.body": "Ce compte a été désactivé. Veuillez contacter le support si vous pensez qu'il s'agit d'une erreur.",
   "chat.deleteDialog.title": "Supprimer cette conversation ?",
   "chat.deleteDialog.body": "Cela efface l'historique de cette discussion. Votre culture suivie et vos rappels ne seront pas affectés.",
   "chat.deleteDialog.cancel": "Annuler",

@@ -172,6 +172,20 @@ export class FarmersService {
   }
 
   /**
+   * Lets ChatGate (the farmer-facing client) find out its own account is
+   * deactivated BEFORE rendering the chat widget, rather than only ever
+   * finding out after sending a message and getting
+   * ChatOrchestratorService's canned reply back. Same anti-enumeration
+   * treatment as getPreferredLanguage above: a nonexistent id returns
+   * `false`, identical to a real, active farmer — never a distinguishable
+   * signal that the id doesn't exist.
+   */
+  async isDeactivated(id: string): Promise<boolean> {
+    const farmer = await this.farmerRepository.findOne({ where: { id } });
+    return !!farmer?.deactivatedAt;
+  }
+
+  /**
    * Explicit update path for the persistent language switcher — unlike
    * registration's backfill-only pattern, this always overwrites, since the
    * farmer is deliberately changing their preference right now. A

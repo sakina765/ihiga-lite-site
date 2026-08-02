@@ -48,6 +48,8 @@
   "chat.actions.sharing": "Gutegura PDF…",
   "chat.actions.delete": "Siba ikiganiro",
 
+  "chat.deactivated.title": "Konti yahagaritswe",
+  "chat.deactivated.body": "Iyi konti yahagaritswe. Nyamuneka vugana n'ubufasha niba ubona ari amakosa.",
   "chat.deleteDialog.title": "Siba iki kiganiro?",
   "chat.deleteDialog.body": "Ibi bizasiba amateka y'iki kiganiro. Igihingwa ukurikirana n'ibyibutswa ntibizagirwaho ingaruka.",
   "chat.deleteDialog.cancel": "Hagarika",

@@ -48,6 +48,8 @@
   "chat.actions.sharing": "Preparing PDF…",
   "chat.actions.delete": "Delete conversation",
 
+  "chat.deactivated.title": "Account deactivated",
+  "chat.deactivated.body": "This account has been deactivated. Please contact support if you believe this is a mistake.",
   "chat.deleteDialog.title": "Delete this conversation?",
   "chat.deleteDialog.body": "This clears your chat history here. Your tracked crop and reminders won't be affected.",
   "chat.deleteDialog.cancel": "Cancel",
